@@ -42,10 +42,15 @@ namespace :canvas do
 
 end
 
+Rake::Task["meta_tasks:before_updated"].clear_actions
 namespace :meta_tasks do
   desc "Additional tasks that need to run before _updated_"
   task :before_updated do
+    invoke 'canvas:copy_config'
+    invoke 'canvas:fix_owner'
     invoke 'canvas:clone_qtimigrationtool'
+    invoke 'canvas:symlink_canvasfiles'
+    invoke 'canvas:migrate_predeploy'
     invoke 'canvas:compile_assets'
   end
 end
