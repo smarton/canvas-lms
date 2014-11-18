@@ -3,7 +3,7 @@ lock '3.2.1'
 set :application,   'canvas'
 set :repo_url,      'https://github.com/smarton/canvas-lms.git'
 set :scm,           'git'
-set :branch,        ENV['branch'] || 'sfu-deploy'
+set :branch,        ENV['branch'] || 'smarton-deploy'
 set :user,          'ubuntu'
 set :deploy_to,     '/var/canvas'
 set :rails_env,     'production'
@@ -17,7 +17,6 @@ set :bundle_flags,  ""
 
 set :ssh_options, {
   forward_agent: true,
-  keys: [File.join(ENV["HOME"], ".ssh", "id_rsa_canvas")],
   user: 'ubuntu'
 }
 if (ENV.has_key?('gateway'))
