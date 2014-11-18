@@ -42,7 +42,7 @@ namespace :canvas do
 
 end
 
-Rake::Task["meta_tasks:before_updated"].clear_actions
+Rake::Task["canvas:meta_tasks:before_updated"].clear_actions
 namespace :meta_tasks do
   desc "Additional tasks that need to run before _updated_"
   task :before_updated do
