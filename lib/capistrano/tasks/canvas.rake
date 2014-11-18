@@ -38,6 +38,8 @@ namespace :canvas do
     end
   end
 
+  task :log_deploy do ; end
+
 end
 
 namespace :meta_tasks do
