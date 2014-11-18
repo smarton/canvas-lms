@@ -39,3 +39,11 @@ namespace :canvas do
   end
 
 end
+
+namespace :meta_tasks do
+  desc "Additional tasks that need to run before _updated_"
+  task :before_updated do
+    invoke 'canvas:clone_qtimigrationtool'
+    invoke 'canvas:compile_assets'
+  end
+end
