@@ -34,7 +34,7 @@ namespace :canvas do
   desc "Create symlink for files folder to mount point"
   task :symlink_canvasfiles do
     on roles(:all) do
-      execute "ln -s #{shared_path}/tmp/files #{release_path}/tmp/files"
+      execute "ln -s #{shared_path}/files #{release_path}/tmp/files"
     end
   end
 
