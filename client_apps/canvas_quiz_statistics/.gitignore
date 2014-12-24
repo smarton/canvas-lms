@@ -1,4 +1,4 @@
-[autogen]
+# autogen
 /.sublime-project.sublime-workspace
 /.jshint.html
 /doc/api
@@ -6,15 +6,15 @@
 /tests.html
 *.swp
 
-[build]
+# build
 /tmp/*
 
-[assets]
+# assets
 exclude
 *.zip
 *.gz
 
-[env]
+# env
 /.ruby-version
 /.grunt/
 /node_modules
@@ -25,6 +25,9 @@ exclude
 /www/images
 /www/src
 /www/vendor
+/www/node_modules
 /vendor/js/rsvp.js
 /src/js/config/environments/development_local.js
+/src/js/bundles/notifications.js
 /dist
+npm-debug.log

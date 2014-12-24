@@ -31,7 +31,7 @@ class DiscussionTopic < ActiveRecord::Base
   attr_accessible :title, :message, :user, :delayed_post_at, :lock_at, :assignment,
     :plaintext_message, :podcast_enabled, :podcast_has_student_posts,
     :require_initial_post, :threaded, :discussion_type, :context, :pinned, :locked,
-    :group_category, :group_category_id
+    :group_category
   attr_accessor :user_has_posted
 
   module DiscussionTypes
@@ -129,19 +129,8 @@ class DiscussionTopic < ActiveRecord::Base
   end
   protected :default_values
 
-  # TODO: These overrides for assignment's group_category can be removed after the migration.
-  alias_method :raw_group_category, :group_category
-
-  def group_category
-    return raw_group_category || (self.assignment && self.assignment.group_category)
-  end
-
-  def legacy_group_category_id
-    return self.group_category.id if self.group_category
-  end
-
   def has_group_category?
-    self.group_category.present?
+    !!self.group_category_id
   end
 
   def set_schedule_delayed_transitions
@@ -478,8 +467,16 @@ class DiscussionTopic < ActiveRecord::Base
   scope :by_last_reply_at, -> { order("discussion_topics.last_reply_at DESC, discussion_topics.created_at DESC, discussion_topics.id DESC") }
 
   scope :visible_to_students_in_course_with_da, lambda { |user_ids, course_ids|
-    joins("LEFT JOIN assignment_student_visibilities ON assignment_student_visibilities.assignment_id = discussion_topics.assignment_id").
-    where("discussion_topics.assignment_id IS NULL OR (discussion_topics.assignment_id = assignment_student_visibilities.assignment_id AND assignment_student_visibilities.user_id IN (?))",user_ids).
+    user_ids = Array.wrap(user_ids).join(',')
+    course_ids = Array.wrap(course_ids).join(',')
+    scope = joins(sanitize_sql([<<-SQL, user_ids, course_ids]))
+      LEFT JOIN assignment_student_visibilities
+        ON (assignment_student_visibilities.assignment_id = discussion_topics.assignment_id
+            AND assignment_student_visibilities.user_id IN (%s)
+            AND assignment_student_visibilities.course_id IN (%s)
+        )
+      SQL
+    scope.where("discussion_topics.assignment_id IS NULL OR assignment_student_visibilities.assignment_id IS NOT NULL").
     where("discussion_topics.context_id IN (?)",course_ids)
    }
 
@@ -605,15 +602,16 @@ class DiscussionTopic < ActiveRecord::Base
     true
   end
 
-  def can_unpublish?
+  def can_unpublish?(opts={})
     if self.assignment
       !self.assignment.has_student_submissions?
-    elsif self.for_group_discussion?
-      self.child_topics.all? do |child|
-        child.discussion_subentry_count == 0
-      end
     else
-      self.discussion_subentry_count == 0
+      student_ids = opts[:student_ids] || self.context.all_real_students.pluck(:id)
+      if self.for_group_discussion?
+        !(self.child_topics.any? { |child| child.discussion_entries.active.where(:user_id => student_ids).exists? })
+      else
+        !self.discussion_entries.active.where(:user_id => student_ids).exists?
+      end
     end
   end
 
@@ -756,7 +754,7 @@ class DiscussionTopic < ActiveRecord::Base
     given { |user| self.user && self.user == user }
     can :read
 
-    given { |user| self.user && self.user == user && self.visible_for?(user) && !self.closed_for_comment_for?(user) }
+    given { |user| self.user && self.user == user && self.visible_for?(user) && !self.closed_for_comment_for?(user, :check_policies => true) }
     can :reply
 
     given { |user| self.user && self.user == user && self.available_for?(user) && context.user_can_manage_own_discussion_posts?(user) }
@@ -768,11 +766,11 @@ class DiscussionTopic < ActiveRecord::Base
     given { |user, session| self.active? && self.context.grants_right?(user, session, :read_forum) }
     can :read
 
-    given { |user, session| self.active? && !self.closed_for_comment_for?(user) &&
+    given { |user, session| !self.closed_for_comment_for?(user, :check_policies => true) &&
         self.context.grants_right?(user, session, :post_to_forum) && self.visible_for?(user)}
     can :reply and can :read
 
-    given { |user, session| self.active? && self.context.grants_right?(user, session, :post_to_forum) && self.visible_for?(user)}
+    given { |user, session| self.context.grants_right?(user, session, :post_to_forum) && self.visible_for?(user)}
     can :read
 
     given { |user, session|
@@ -790,7 +788,7 @@ class DiscussionTopic < ActiveRecord::Base
 
     # Moderators can still modify content even in unavailable topics (*especially* unlocking them), but can't create new content
     given { |user, session| !self.root_topic_id && self.context.grants_right?(user, session, :moderate_forum) }
-    can :update and can :delete and can :read
+    can :update and can :delete and can :read and can :attach
 
     given { |user, session| self.root_topic && self.root_topic.grants_right?(user, session, :update) }
     can :update
@@ -853,7 +851,7 @@ class DiscussionTopic < ActiveRecord::Base
     tags_to_update = self.context_module_tags.to_a
     if self.for_assignment?
       tags_to_update += self.assignment.context_module_tags
-      self.ensure_submission(user) if assignment.grants_right?(user, :submit) && action == :contributed
+      self.ensure_submission(user) if context.grants_right?(user, :participate_as_student) && assignment.visible_to_user?(user) && action == :contributed
     end
     tags_to_update.each { |tag| tag.context_module_action(user, action, points) }
   end
@@ -987,7 +985,7 @@ class DiscussionTopic < ActiveRecord::Base
   end
 
   def closed_for_comment_for?(user, opts={})
-    return true if self.locked?
+    return true if self.locked? && !(opts[:check_policies] && self.grants_right?(user, :update))
     lock = self.locked_for?(user, opts)
     return false unless lock
     return false if self.draft_state_enabled? && lock.include?(:unlock_at)

@@ -1,6 +1,7 @@
 define [
   'underscore'
   'react'
+  'react-router'
   'i18n!react_files'
   'compiled/react/shared/utils/withReactDOM'
   '../modules/filesEnv'
@@ -13,16 +14,22 @@ define [
   './CurrentUploads'
   './FilePreview'
   './UploadDropZone'
-], (_, React, I18n, withReactDOM, filesEnv, ColumnHeaders, LoadingIndicator, FolderChild, getAllPages, updateAPIQuerySortParams, Folder, CurrentUploads, FilePreview, UploadDropZone) ->
+  '../utils/forceScreenreaderToReparse'
+], (_, React, Router, I18n, withReactDOM, filesEnv, ColumnHeaders, LoadingIndicator, FolderChild, getAllPages, updateAPIQuerySortParams, Folder, CurrentUploads, FilePreview, UploadDropZone, forceScreenreaderToReparse) ->
+
 
   LEADING_SLASH_TILL_BUT_NOT_INCLUDING_NEXT_SLASH = /^\/[^\/]*/
 
   ShowFolder = React.createClass
     displayName: 'ShowFolder'
 
+    mixins: [Router.Navigation]
+
     debouncedForceUpdate: _.debounce ->
       @forceUpdate() if @isMounted()
     , 0
+
+    previousFolderId: null
 
     registerListeners: (props) ->
       return unless props.currentFolder
@@ -71,6 +78,10 @@ define [
       setTimeout =>
         @props.onResolvePath({currentFolder:undefined, rootTillCurrentFolder:undefined})
 
+    componentDidUpdate: ->
+      # hooray for a11y
+      @redirectToCourseFiles() if @props.currentFolder?.get('locked_for_user')
+      forceScreenreaderToReparse(@getDOMNode())
 
     componentWillReceiveProps: (newProps) ->
       @unregisterListeners()
@@ -78,6 +89,17 @@ define [
       @registerListeners(newProps)
       [newProps.currentFolder.folders, newProps.currentFolder.files].forEach (collection) ->
         updateAPIQuerySortParams(collection, newProps.query)
+
+    redirectToCourseFiles: ->
+      if @props.currentFolder? and (@previousFolderId?.toString() isnt @props.currentFolder.get('id').toString())
+        @previousFolderId = @props.currentFolder.get('id')
+        message = I18n.t('This folder is currently locked and unavailable to view.')
+        $.flashError message
+        $.screenReaderFlashMessage message
+
+        setTimeout(=>
+          @transitionTo filesEnv.baseUrl, {}, {}
+        , 0)
 
     render: withReactDOM ->
       if @state?.errorMessages
@@ -91,8 +113,10 @@ define [
         ColumnHeaders {
           to: (if @props.params.splat then 'folder' else 'rootFolder')
           query: @props.query
+          params: @props.params
           toggleAllSelected: @props.toggleAllSelected
           areAllItemsSelected: @props.areAllItemsSelected
+          usageRightsRequiredForContext: @props.usageRightsRequiredForContext
           splat: @props.params.splat
         }
         if @props.currentFolder.isEmpty()
@@ -105,6 +129,9 @@ define [
               isSelected: child in @props.selectedItems
               toggleSelected: @props.toggleItemSelected.bind(null, child)
               userCanManageFilesForContext: @props.userCanManageFilesForContext
+              usageRightsRequiredForContext: @props.usageRightsRequiredForContext
+              externalToolsForContext: @props.externalToolsForContext
+              previewItem: @props.previewItem.bind(null, child)
               dndOptions: @props.dndOptions
 
         LoadingIndicator isLoading: @props.currentFolder.folders.fetchingNextPage || @props.currentFolder.files.fetchingNextPage
@@ -116,3 +143,4 @@ define [
             currentFolder: @props.currentFolder
             params: @props.params
             query: @props.query
+

@@ -1,9 +1,11 @@
 define [
+  'i18n!folder_tree'
   'react'
   'react-router'
-  'compiled/views/FileBrowserView'
+  'compiled/views/TreeBrowserView'
+  'compiled/views/RootFoldersFinder'
   '../modules/customPropTypes'
-], (React, Router, FileBrowserView, customPropTypes) ->
+], (I18n, React, Router, TreeBrowserView, RootFoldersFinder, customPropTypes) ->
 
   FolderTree = React.createClass
     displayName: 'FolderTree'
@@ -12,15 +14,20 @@ define [
       rootFoldersToShow: React.PropTypes.arrayOf(customPropTypes.folder).isRequired
       rootTillCurrentFolder: React.PropTypes.arrayOf(customPropTypes.folder)
 
-    mixins: [Router.Navigation]
+    mixins: [Router.Navigation, Router.ActiveState]
 
     componentDidMount: ->
-      new FileBrowserView({
-        onlyShowFolders: true,
+      rootFoldersFinder = new RootFoldersFinder({
         rootFoldersToShow: @props.rootFoldersToShow
+      })
+      new TreeBrowserView({
+        onlyShowFolders: true,
+        rootModelsFinder: rootFoldersFinder
         onClick: @onClick
         dndOptions: @props.dndOptions
         href: @hrefFor
+        focusStyleClass: @focusStyleClass
+        selectedStyleClass: @selectedStyleClass
       }).render().$el.appendTo(@refs.FolderTreeHolder.getDOMNode())
       @expandTillCurrentFolder(@props)
 
@@ -31,11 +38,24 @@ define [
 
     onClick: (event, folder) ->
       event.preventDefault()
-      @transitionTo (if folder.urlPath() then 'folder' else 'rootFolder'), splat: folder.urlPath()
+      $(@refs.FolderTreeHolder.getDOMNode()).find('.' + @focusStyleClass).each( (key, value) => $(value).removeClass(@focusStyleClass))
+      $(@refs.FolderTreeHolder.getDOMNode()).find('.' + @selectedStyleClass).each( (key, value) => $(value).removeClass(@selectedStyleClass))
+      if folder.get('locked_for_user')
+        message = I18n.t('This folder is currently locked and unavailable to view.')
+        $.flashError message
+        $.screenReaderFlashMessage message
+      else
+        @transitionTo (if folder.urlPath() then 'folder' else 'rootFolder'), splat: folder.urlPath()
+
 
 
     hrefFor: (folder) ->
       @makeHref (if folder.urlPath() then 'folder' else 'rootFolder'), splat: folder.urlPath()
+
+
+
+    focusStyleClass: 'FolderTree__folderItem--focused'
+    selectedStyleClass: 'FolderTree__folderItem--selected'
 
 
     expandTillCurrentFolder: (props) ->

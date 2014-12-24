@@ -5,17 +5,18 @@
 @import "./question_statistics";
 @import "../../vendor/css/jquery.qtip";
 @import "./ext/qtip";
+@import "./components/ic_spinner";
 
 #canvas-quiz-statistics {
-  border-top: 1px solid #CAD0D7;
   padding: 25px 35px 55px 35px;
 
-  header {
-    line-height: 34px;
+  a:not(:disabled) {
+    cursor: pointer;
+  }
 
-    &.padded {
-      padding: 20px 0;
-    }
+  header.padded {
+    padding: $whitespace*2 0;
+    line-height: 34px;
   }
 
   .inline {
@@ -32,24 +33,24 @@
   }
 
   .answer-set-tabs {
-    margin-top: -10px; // negate the margin in the <p /> in the header above
-    margin-bottom: 20px;
+    margin: $whitespace*2 0;
 
     button {
       display: inline-block;
-      color: white;
-      background: $muteTextColor;
+      background: $inactiveBg;
+      color: $inactiveFg;
       font-weight: bold;
       padding: 5px 10px;
       border: none;
       border-radius: 4px;
 
       & + button {
-        margin-left: 5px;
+        margin-left: $whitespace / 2;
       }
 
       &.active, &:hover {
-        background: #2894d1;
+        background: $activeBg;
+        color: $activeFg;
         cursor: pointer;
       }
     }
@@ -74,5 +75,31 @@
 
   .sighted-user-content[hidden] {
     display: inherit;
+  }
+
+  #notifications {
+    padding: 0;
+    margin: 0;
+    list-style: none;
+    $dismiss-width: 60px;
+    padding-right: $dismiss-width + $whitespace;
+
+    li {
+      position: relative;
+    }
+
+    .notification {
+      vertical-align: middle;
+      display: inline-block;
+      width: 100%;
+    }
+
+    .dismiss-notification {
+      display: inline-block;
+      position: relative;
+      margin-left: -50px;
+      right: -60px;
+      top: -10px;
+    }
   }
 }

@@ -130,6 +130,7 @@ describe SIS::CSV::EnrollmentImporter do
     expect(course.tas.first.name).to eq "User Tres"
     expect(course.observers.first.name).to eq "User Quatro"
     expect(course.observer_enrollments.first.associated_user_id).to eq course.students.first.id
+    expect(course.observer_enrollments.first.sis_source_id).to eq "test_1:user_5:#{observer_role.id}:Sec1"
     expect(course.designers.first.name).to eq "User Cinco"
     siete = course.teacher_enrollments.detect { |e| e.user.name == "User Siete" }
     expect(siete).not_to be_nil
@@ -510,8 +511,8 @@ describe SIS::CSV::EnrollmentImporter do
             "TehCourse,user1,student,,active,",
             "TehCourse,user2,cheater,,active,"
         )
-        expect(@user1.enrollments.map{|e|[e.type, e.role_name]}).to eq [['StudentEnrollment', nil]]
-        expect(@user2.enrollments.map{|e|[e.type, e.role_name]}).to eq [['StudentEnrollment', 'cheater']]
+        expect(@user1.enrollments.map{|e|[e.type, e.role.name]}).to eq [['StudentEnrollment', 'StudentEnrollment']]
+        expect(@user2.enrollments.map{|e|[e.type, e.role.name]}).to eq [['StudentEnrollment', 'cheater']]
       end
 
       it "should not enroll with an inactive role" do
@@ -539,7 +540,7 @@ describe SIS::CSV::EnrollmentImporter do
             "TehCourse,user1,cheater,,active,",
             "TehCourse,user1,insufferable know-it-all,,active,"
         )
-        expect(@user1.enrollments.sort_by(&:id).map(&:role_name)).to eq ['cheater', 'insufferable know-it-all']
+        expect(@user1.enrollments.sort_by(&:id).map(&:role).map(&:name)).to eq ['cheater', 'insufferable know-it-all']
       end
     end
 
@@ -560,8 +561,8 @@ describe SIS::CSV::EnrollmentImporter do
             "TehCourse,user1,instruc-TOR,,active,",
             "TehCourse,user2,student,,active,"
         )
-        expect(@user1.enrollments.map{|e|[e.type, e.role_name]}).to eq [['TeacherEnrollment', 'instruc-TOR']]
-        expect(@user2.enrollments.map{|e|[e.type, e.role_name]}).to eq [['StudentEnrollment', nil]]
+        expect(@user1.enrollments.map{|e|[e.type, e.role.name]}).to eq [['TeacherEnrollment', 'instruc-TOR']]
+        expect(@user2.enrollments.map{|e|[e.type, e.role.name]}).to eq [['StudentEnrollment', 'StudentEnrollment']]
       end
 
       it "should not enroll with an inactive inherited role" do
@@ -572,7 +573,7 @@ describe SIS::CSV::EnrollmentImporter do
             "TehCourse,user2,student,,active,"
         )
         expect(@user1.enrollments.size).to eq 0
-        expect(@user2.enrollments.map{|e|[e.type, e.role_name]}).to eq [['StudentEnrollment', nil]]
+        expect(@user2.enrollments.map{|e|[e.type, e.role.name]}).to eq [['StudentEnrollment', 'StudentEnrollment']]
         expect(importer.warnings.map(&:last)).to eq ["Improper role \"instruc-TOR\" for an enrollment"]
       end
 
@@ -586,8 +587,8 @@ describe SIS::CSV::EnrollmentImporter do
             "TehCourse,user1,instruc-TOR,,active,",
             "TehCourse,user2,student,,active,"
         )
-        expect(@user1.enrollments.map{|e|[e.type, e.role_name]}).to eq [['TeacherEnrollment', 'instruc-TOR']]
-        expect(@user2.enrollments.map{|e|[e.type, e.role_name]}).to eq [['StudentEnrollment', nil]]
+        expect(@user1.enrollments.map{|e|[e.type, e.role.name]}).to eq [['TeacherEnrollment', 'instruc-TOR']]
+        expect(@user2.enrollments.map{|e|[e.type, e.role.name]}).to eq [['StudentEnrollment', 'StudentEnrollment']]
       end
 
       it "should not enroll with a custom role defined in a sibling account" do
@@ -603,7 +604,7 @@ describe SIS::CSV::EnrollmentImporter do
         )
         expect(importer.warnings.map(&:last)).to eq ["Improper role \"Pixel Pusher\" for an enrollment"]
         expect(@user1.enrollments.size).to eq 0
-        expect(@user2.enrollments.map{|e|[e.type, e.role_name]}).to eq [['DesignerEnrollment', 'Pixel Pusher']]
+        expect(@user2.enrollments.map{|e|[e.type, e.role.name]}).to eq [['DesignerEnrollment', 'Pixel Pusher']]
       end
     end
   end
@@ -690,7 +691,7 @@ describe SIS::CSV::EnrollmentImporter do
         "user_id,login_id,first_name,last_name,email,status",
         "user_1,user1,User,Uno,user@example.com,active"
     )
-    course = Course.find_by_sis_source_id('test_1')
+    course = Course.where(sis_source_id: 'test_1').first
     course.offer!
 
     student = Pseudonym.where(:unique_id => "user1").first.user
@@ -707,6 +708,37 @@ describe SIS::CSV::EnrollmentImporter do
     e = observer.observer_enrollments.first
     expect(e.course_id).to eq course.id
     expect(e.associated_user_id).to eq student.id
+  end
+
+  it "should delete observer enrollments when the student enrollment is already deleted" do
+    process_csv_data_cleanly(
+        "course_id,short_name,long_name,account_id,term_id,status",
+        "test_1,TC 101,Test Course 101,,,active"
+    )
+    process_csv_data_cleanly(
+        "user_id,login_id,first_name,last_name,email,status",
+        "student_user,user1,User,Uno,user@example.com,active",
+        "observer_user,user2,User,Two,user2@example.com,active"
+    )
+    process_csv_data_cleanly(
+        "course_id,user_id,role,section_id,status,associated_user_id",
+        "test_1,student_user,student,,active,",
+        "test_1,observer_user,observer,,active,student_user"
+    )
+
+    student = Pseudonym.where(:sis_user_id => "student_user").first.user
+    observer = Pseudonym.where(:sis_user_id => "observer_user").first.user
+
+    expect(observer.enrollments.count).to eq 1
+    expect(observer.enrollments.first.associated_user_id).to eq student.id
+
+    process_csv_data_cleanly(
+        "course_id,user_id,role,section_id,status,associated_user_id",
+        "test_1,student_user,student,,deleted,",
+        "test_1,observer_user,observer,,deleted,student_user"
+    )
+    expect(observer.enrollments.count).to eq 1
+    expect(observer.enrollments.first.workflow_state).to eq 'deleted'
   end
 
 end

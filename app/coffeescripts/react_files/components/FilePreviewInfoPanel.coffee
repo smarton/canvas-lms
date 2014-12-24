@@ -4,8 +4,10 @@ define [
   './FriendlyDatetime'
   'compiled/util/friendlyBytes'
   'compiled/react/shared/utils/withReactDOM'
-  '../modules/customPropTypes'
- ], (React, I18n, FriendlyDatetime, friendlyBytes, withReactDOM, customPropTypes) ->
+  '../modules/customPropTypes',
+  '../utils/getFileStatus'
+  'compiled/util/mimeClass'
+ ], (React, I18n, FriendlyDatetime, friendlyBytes, withReactDOM, customPropTypes, getFileStatus, mimeClass) ->
 
   FilePreviewInfoPanel = React.createClass
 
@@ -13,47 +15,45 @@ define [
 
     propTypes:
       displayedItem: customPropTypes.filesystemObject.isRequired
-      getStatusMessage: React.PropTypes.func
 
     render: withReactDOM ->
-      div {className: 'col-xs-4 full-height ef-file-preview-information'},
+      div {className: 'ef-file-preview-information-container'},
         table {className: 'ef-file-preview-infotable'},
           tbody {},
             tr {},
               th {scope: 'row'},
                 I18n.t('file_preview_infotable_name', 'Name')
               td {},
-                @props.displayedItem?.displayName()
+                @props.displayedItem.displayName()
             tr {},
               th {scope: 'row'},
                 I18n.t('file_preview_infotable_status', 'Status')
               td {},
-                @props.getStatusMessage();
+                getFileStatus(@props.displayedItem)
             tr {},
               th {scope: 'row'},
                 I18n.t('file_preview_infotable_kind', 'Kind')
               td {},
-                @props.displayedItem?.get 'content-type'
+                mimeClass.displayName(@props.displayedItem.get('content-type'))
             tr {},
               th {scope: 'row'},
                 I18n.t('file_preview_infotable_size', 'Size')
               td {},
-                friendlyBytes @props.displayedItem?.get('size')
+                friendlyBytes @props.displayedItem.get('size')
             tr {},
               th {scope: 'row'},
                 I18n.t('file_preview_infotable_datemodified', 'Date Modified')
               td {},
-                FriendlyDatetime datetime: @props.displayedItem?.get('updated_at')
-            if @props.displayedItem?.get('user')
+                FriendlyDatetime datetime: @props.displayedItem.get('updated_at')
+            if user = @props.displayedItem.get('user')
               tr {},
                 th {scope: 'row'},
-                  I18n.t('file_preview_infotable_modifiedby', 'Modified By')
+                  I18n.t('file_preview_infotable_modifiedby', 'Last Modified By')
                 td {},
-                  img {className: 'avatar', src: @props.displayedItem?.get('user').avatar_image_url }
-                    a {href: @props.displayedItem?.get('user').html_url},
-                      @props.displayedItem?.get('user').display_name
+                  a {href: user.html_url},
+                    user.display_name
             tr {},
               th {scope: 'row'},
                 I18n.t('file_preview_infotable_datecreated', 'Date Created')
               td {},
-                FriendlyDatetime datetime: @props.displayedItem?.get('created_at')
+                FriendlyDatetime datetime: @props.displayedItem.get('created_at')

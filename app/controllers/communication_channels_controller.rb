@@ -18,7 +18,7 @@
 
 # @API Communication Channels
 #
-# API for accessing users' email addresses, SMS phone numbers, Twitter,
+# API for accessing users' email addresses, SMS phone numbers, Twitter, Yo,
 # and Facebook communication channels.
 #
 # In this API, the `:user_id` parameter can always be replaced with `self` if
@@ -40,7 +40,7 @@
 #           "type": "string"
 #         },
 #         "type": {
-#           "description": "The type of communcation channel being described. Possible values are: 'email', 'sms', 'chat', 'facebook' or 'twitter'. This field determines the type of value seen in 'address'.",
+#           "description": "The type of communcation channel being described. Possible values are: 'email', 'sms', 'chat', 'facebook', 'twitter' or 'yo'. This field determines the type of value seen in 'address'.",
 #           "example": "email",
 #           "type": "string",
 #           "allowableValues": {
@@ -49,7 +49,8 @@
 #               "sms",
 #               "chat",
 #               "facebook",
-#               "twitter"
+#               "twitter",
+#               "yo"
 #             ]
 #           }
 #         },
@@ -139,7 +140,7 @@ class CommunicationChannelsController < ApplicationController
 
     return render_unauthorized_action unless has_api_permissions?
 
-    params.delete(:build_pseudonym) if api_request?
+    params[:build_pseudonym] = 0 if api_request?
 
     skip_confirmation = value_to_boolean(params[:skip_confirmation]) &&
         (Account.site_admin.grants_right?(@current_user, :manage_students) || @domain_root_account.grants_right?(@current_user, :manage_students))
@@ -244,6 +245,8 @@ class CommunicationChannelsController < ApplicationController
       # load merge opportunities
       merge_users = cc.merge_candidates
       merge_users << @current_user if @current_user && !@user.registered? && !merge_users.include?(@current_user)
+      user_observers = UserObserver.where("user_id = ? OR observer_id = ?", @user.id, @user.id)
+      merge_users = merge_users.reject { |u| user_observers.any?{|uo| uo.user == u || uo.observer == u} }
       # remove users that don't have a pseudonym for this account, or one can't be created
       merge_users = merge_users.select { |u| u.find_or_initialize_pseudonym_for_account(@root_account, @domain_root_account) }
       @merge_opportunities = []

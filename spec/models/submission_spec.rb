@@ -416,8 +416,12 @@ describe Submission do
       it "should initially set turnitin submission to pending" do
         init_turnitin_api
         @turnitin_api.expects(:createOrUpdateAssignment).with(@assignment, @assignment.turnitin_settings).returns({ :assignment_id => "1234" })
-        @turnitin_api.expects(:enrollStudent).with(@context, @user).returns(true)
-        @turnitin_api.expects(:sendRequest).with(:submit_paper, '2', has_entries(:pdata => @submission.plaintext_body)).returns(Nokogiri('<objectID>12345</objectID>'))
+        @turnitin_api.expects(:enrollStudent).with(@context, @user).returns(stub(:success? => true))
+        @turnitin_api.expects(:submitPaper).returns({
+          @submission.asset_string => {
+            :object_id => '12345'
+          }
+        })
         @submission.submit_to_turnitin
         expect(@submission.reload.turnitin_data[@submission.asset_string][:status]).to eq 'pending'
       end
@@ -425,33 +429,33 @@ describe Submission do
       it "should schedule a retry if something fails initially" do
         init_turnitin_api
         @turnitin_api.expects(:createOrUpdateAssignment).with(@assignment, @assignment.turnitin_settings).returns({ :assignment_id => "1234" })
-        @turnitin_api.expects(:enrollStudent).with(@context, @user).returns(false)
+        @turnitin_api.expects(:enrollStudent).with(@context, @user).returns(stub(:success? => false))
         @submission.submit_to_turnitin
         expect(Delayed::Job.list_jobs(:future, 100).find_all { |j| j.tag == 'Submission#submit_to_turnitin' }.size).to eq 2
       end
 
       it "should set status as failed if something fails after several attempts" do
         init_turnitin_api
-        @turnitin_api.expects(:createOrUpdateAssignment).with(@assignment, @assignment.turnitin_settings).returns({ :assignment_id => "1234" })
-        @turnitin_api.expects(:enrollStudent).with(@context, @user).returns(true)
-        example_error = '<rerror><rcode>1001</rcode><rmessage>You may not submit a paper to this assignment until the assignment start date</rmessage></rerror>'
-        @turnitin_api.expects(:sendRequest).with(:submit_paper, '2', has_entries(:pdata => @submission.plaintext_body)).returns(Nokogiri(example_error))
+        @assignment.expects(:create_in_turnitin).returns(false)
+        @turnitin_api.expects(:enrollStudent).with(@context, @user).returns(stub(:success? => false, :error? => true, :error_hash => {}))
+        @turnitin_api.expects(:submitPaper).never
         @submission.submit_to_turnitin(Submission::TURNITIN_RETRY)
-        expect(@submission.reload.turnitin_data[@submission.asset_string][:status]).to eq 'error'
+        expect(@submission.reload.turnitin_data[:status]).to eq 'error'
       end
 
       it "should set status back to pending on retry" do
         init_turnitin_api
         # first a submission, to get us into failed state
-        example_error = '<rerror><rcode>123</rcode><rmessage>You cannot create this assignment right now</rmessage></rerror>'
-        @turnitin_api.expects(:sendRequest).with(:create_assignment, '2', has_entries(@assignment.turnitin_settings)).returns(Nokogiri(example_error))
-        @turnitin_api.expects(:enrollStudent).with(@context, @user).returns(false)
+        @assignment.expects(:create_in_turnitin).returns(false)
+        @turnitin_api.expects(:enrollStudent).with(@context, @user).returns(stub(:success? => false, :error? => true, :error_hash => {}))
+        @turnitin_api.expects(:submitPaper).never
         @submission.submit_to_turnitin(Submission::TURNITIN_RETRY)
-        expect(@submission.reload.turnitin_data[@submission.asset_string][:status]).to eq 'error'
+        expect(@submission.reload.turnitin_data[:status]).to eq 'error'
 
         # resubmit
         @submission.resubmit_to_turnitin
-        expect(@submission.reload.turnitin_data[@submission.asset_string][:status]).to eq 'pending'
+        expect(@submission.reload.turnitin_data[:status]).to be_nil
+        expect(@submission.turnitin_data[@submission.asset_string][:status]).to eq 'pending'
       end
 
       it "should set status to scored on success" do
@@ -481,7 +485,9 @@ describe Submission do
         end
 
         @submission.check_turnitin_status(Submission::TURNITIN_RETRY)
-        expect(@submission.reload.turnitin_data[@submission.asset_string][:status]).to eq 'error'
+        @submission.reload
+        updated_data = @submission.turnitin_data[@submission.asset_string]
+        expect(updated_data[:status]).to eq 'error'
       end
 
       it "should check status for all assets" do
@@ -1076,6 +1082,29 @@ describe Submission do
       CutyCapt.expects(:enabled?).returns(true)
       CutyCapt.expects(:snapshot_attachment_for_url).with(sub.url).returns(nil)
       sub.get_web_snapshot
+    end
+  end
+
+  describe '#submit_attachments_to_canvadocs' do
+    it 'creates crocodoc documents' do
+      Canvas::Crocodoc.stubs(:enabled?).returns true
+      s = @assignment.submit_homework(@user,
+                                      submission_type: "online_text_entry",
+                                      body: "hi")
+
+      # creates crocodoc documents
+      a1 = crocodocable_attachment_model context: @user
+      s.attachments = [a1]
+      s.save
+      cd = a1.crocodoc_document
+      expect(cd).not_to be_nil
+
+      # shouldn't mess with existing crocodoc documents
+      a2 = crocodocable_attachment_model context: @user
+      s.attachments = [a1, a2]
+      s.save
+      expect(a1.crocodoc_document(true)).to eq cd
+      expect(a2.crocodoc_document).to eq a2.crocodoc_document
     end
   end
 end

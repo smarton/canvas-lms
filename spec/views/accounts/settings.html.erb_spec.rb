@@ -20,6 +20,11 @@ require File.expand_path(File.dirname(__FILE__) + '/../../spec_helper')
 require File.expand_path(File.dirname(__FILE__) + '/../views_helper')
 
 describe "accounts/settings.html.erb" do
+  before do
+    assigns[:account_roles] = []
+    assigns[:course_roles] = []
+  end
+
   describe "sis_source_id edit box" do
     before do
       @account = Account.default.sub_accounts.create!
@@ -150,9 +155,10 @@ describe "accounts/settings.html.erb" do
 
   context "admins" do
     it "should not show add admin button if don't have permission to any roles" do
+      role = custom_account_role('CustomAdmin', :account => Account.site_admin)
       account_admin_user_with_role_changes(
           :account => Account.site_admin,
-          :membership_type => 'CustomAdmin',
+          :role => role,
           :role_changes => {manage_account_memberships: true})
       view_context(Account.default, @user)
       assigns[:account] = Account.default

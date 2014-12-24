@@ -124,6 +124,19 @@ describe "admin settings tab" do
     it "should click on 'restrict students from viewing courses before start date'" do
       check_box_verifier("#account_settings_restrict_student_future_view", :restrict_student_future_view)
     end
+
+    it "should set trusted referers for account" do
+      trusted_referers = 'https://example.com,http://example.com'
+      set_value f("#account_settings_trusted_referers"), trusted_referers
+      click_submit
+      expect(Account.default[:settings][:trusted_referers]).to eq trusted_referers
+      expect(f("#account_settings_trusted_referers").attribute('value')).to eq trusted_referers
+
+      set_value f("#account_settings_trusted_referers"), ''
+      click_submit
+      expect(Account.default[:settings][:trusted_referers]).to be_nil
+      expect(f("#account_settings_trusted_referers").attribute('value')).to eq ''
+    end
   end
 
   context "global includes" do
@@ -146,7 +159,7 @@ describe "admin settings tab" do
       expect(fj('#account_settings_global_includes_settings:visible')).to be_nil
     end
 
-    it "a sub-account should have a global includes section if enabled by the parrent" do
+    it "a sub-account should have a global includes section if enabled by the parent" do
       Account.default.settings = Account.default.settings.merge({ :global_includes => true })
       Account.default.settings = Account.default.settings.merge({ :sub_account_includes => true })
       Account.default.save!
@@ -284,11 +297,6 @@ describe "admin settings tab" do
       check_box_verifier("#account_services_delicious", {:allowed_services => :delicious})
     end
 
-    it "should unclick and then click on diigo" do
-      check_box_verifier("#account_services_diigo", {:allowed_services => :diigo}, false)
-      check_box_verifier("#account_services_diigo", {:allowed_services => :diigo})
-    end
-
     it "should unclick and click on google docs previews" do
       check_box_verifier("#account_services_google_docs_previews", {:allowed_services => :google_docs_previews}, false)
       check_box_verifier("#account_services_google_docs_previews", {:allowed_services => :google_docs_previews})
@@ -322,7 +330,7 @@ describe "admin settings tab" do
     end
   end
 
-  context "who can create wew courses" do
+  context "who can create new courses" do
 
     it "should check on teachers" do
       check_box_verifier("#account_settings_teachers_can_create_courses", :teachers_can_create_courses)
@@ -404,6 +412,63 @@ describe "admin settings tab" do
       expect(Account.default.settings[:custom_help_links]).to eq [
         {"text"=>"text", "subtext"=>"subtext", "url"=>"http://www.example.com/example", "available_to"=>["user", "student", "teacher"]}
       ]
+    end
+  end
+
+  context "external integration keys" do
+    let!(:key_value) { '42' }
+    before(:once) do
+      ExternalIntegrationKey.key_type :external_key0, label: 'External Key 0', rights: { read: proc { true }, write: true }
+      ExternalIntegrationKey.key_type :external_key1, label: proc { 'External Key 1' }, rights: { read: true, write: false }
+      ExternalIntegrationKey.key_type :external_key2, label: 'External Key 2', rights: { read: proc { false }, write: false }
+    end
+
+    it "should not display external integration keys if no key types exist" do
+      ExternalIntegrationKey.stubs(:key_types).returns([])
+      get "/accounts/#{Account.default.id}/settings"
+      expect(f("#external_integration_keys")).to be_nil
+    end
+
+    it "should not display external integration keys if no rights are granted" do
+      ExternalIntegrationKey.any_instance.stubs(:grants_right_for?).returns(false)
+      get "/accounts/#{Account.default.id}/settings"
+      expect(f("#external_integration_keys")).to be_nil
+    end
+
+    it "should display keys with the correct rights" do
+      eik = ExternalIntegrationKey.new
+      eik.context = Account.default
+      eik.key_type = 'external_key0'
+      eik.key_value = key_value
+      eik.save
+
+      eik = ExternalIntegrationKey.new
+      eik.context = Account.default
+      eik.key_type = 'external_key1'
+      eik.key_value = key_value
+      eik.save
+
+      get "/accounts/#{Account.default.id}/settings"
+
+      expect(f("label[for='account_external_integration_keys_external_key0']").text).to eq 'External Key 0:'
+      expect(f("label[for='account_external_integration_keys_external_key1']").text).to eq 'External Key 1:'
+      expect(f("label[for='account_external_integration_keys_external_key2']")).to be_nil
+
+      expect(f("#account_external_integration_keys_external_key0").attribute('value')).to eq key_value
+      expect(f("#external_integration_keys span").text).to eq key_value
+      expect(f("#account_external_integration_keys_external_key2")).to be_nil
+    end
+
+    it "should update writable keys" do
+      set_value f("#account_external_integration_keys_external_key0"), key_value
+      click_submit
+
+      expect(f("#account_external_integration_keys_external_key0").attribute('value')).to eq key_value
+
+      set_value f("#account_external_integration_keys_external_key0"), ''
+      click_submit
+
+      expect(f("#account_external_integration_keys_external_key0").attribute('value')).to eq ''
     end
   end
 end

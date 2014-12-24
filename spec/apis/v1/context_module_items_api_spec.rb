@@ -986,9 +986,11 @@ describe "Module Items API", type: :request do
           :course_id => "#{@course.id}", :module_id => "#{@module1.id}", :include => ['content_details'])
       end
       let(:assignment_details) { json.find{|item| item['id'] == @assignment_tag.id}['content_details'] }
+      let(:external_url_details) { json.find{|item| item['id'] == @external_url_tag.id}['content_details'] }
 
       before :once do
         override_assignment
+        @module1.update_attribute(:require_sequential_progress, true)
       end
 
       it "should include user specific details" do
@@ -1002,11 +1004,20 @@ describe "Module Items API", type: :request do
 
       it "should include lock information" do
         expect(assignment_details['locked_for_user']).to eq true
-        assignment_details.include?('lock_explanation')
-        assignment_details.include?('lock_info')
+        expect(assignment_details).to include 'lock_explanation'
+        expect(assignment_details).to include 'lock_info'
         expect(assignment_details['lock_info']).to include(
           'asset_string' => @assignment.asset_string,
           'unlock_at' => @unlock_at.iso8601,
+        )
+      end
+
+      it "should include lock information for contentless tags" do
+        expect(external_url_details['locked_for_user']).to eq true
+        expect(external_url_details).to include 'lock_explanation'
+        expect(external_url_details).to include 'lock_info'
+        expect(external_url_details['lock_info']).to include(
+            'asset_string' => @module1.asset_string
         )
       end
     end
@@ -1035,8 +1046,8 @@ describe "Module Items API", type: :request do
 
       it "should include lock information" do
         expect(assignment_details['locked_for_user']).to eq true
-        assignment_details.include?('lock_explanation')
-        assignment_details.include?('lock_info')
+        expect(assignment_details).to include 'lock_explanation'
+        expect(assignment_details).to include 'lock_info'
         expect(assignment_details['lock_info']).to include(
           'asset_string' => @assignment.asset_string,
           'unlock_at' => @unlock_at.iso8601,
@@ -1121,6 +1132,37 @@ describe "Module Items API", type: :request do
                       :id => "#{@assignment_tag.id}", :student_id => "#{student.id}"},
                       {}, {},
                       {:expected_status => 401})
+    end
+
+    describe "POST 'mark_item_read'" do
+      it "should fulfill must-view requirement" do
+        api_call(:post, "/api/v1/courses/#{@course.id}/modules/#{@module1.id}/items/#{@external_url_tag.id}/mark_read",
+                 :controller => "context_module_items_api", :action => "mark_item_read",
+                 :format => "json", :course_id => @course.to_param, :module_id => @module1.to_param, :id => @external_url_tag.to_param)
+        expect(@module1.evaluate_for(@user).requirements_met).to be_any {
+            |rm| rm[:type] == "must_view" && rm[:id] == @external_url_tag.id }
+      end
+
+      it "should not fulfill must-view requirement on unpublished item" do
+        @external_url_tag.unpublish
+        api_call(:post, "/api/v1/courses/#{@course.id}/modules/#{@module1.id}/items/#{@external_url_tag.id}/mark_read",
+                 { :controller => "context_module_items_api", :action => "mark_item_read",
+                   :format => "json", :course_id => @course.to_param, :module_id => @module1.to_param, :id => @external_url_tag.to_param },
+                 {}, {}, { expected_status: 404 })
+        expect(@module1.evaluate_for(@user).requirements_met).not_to be_any {
+            |rm| rm[:type] == "must_view" && rm[:id] == @external_url_tag.id }
+      end
+
+      it "should not fulfill must-view requirement on locked item" do
+        @module2.completion_requirements = { @attachment_tag.id => { :type => 'must_view' } }
+        @module2.save!
+        json = api_call(:post, "/api/v1/courses/#{@course.id}/modules/#{@module2.id}/items/#{@attachment_tag.id}/mark_read",
+                 { :controller => "context_module_items_api", :action => "mark_item_read",
+                   :format => "json", :course_id => @course.to_param, :module_id => @module2.to_param, :id => @attachment_tag.to_param },
+                 {}, {}, { expected_status: 403 })
+        expect(json['message']).to eq('The module item is locked.')
+        expect(@module2.evaluate_for(@user).requirements_met).to be_empty
+      end
     end
 
     describe "GET 'module_item_sequence'" do

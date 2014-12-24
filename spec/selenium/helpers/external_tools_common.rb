@@ -7,9 +7,8 @@ shared_examples_for "external tools tests" do
     name = "external tool"
     key = "1234567"
     secret = "secret"
-
+    f("#tab-tools-link").click
     f("#tab-tools .add_tool_link").click
-
     f("#external_tool_name").send_keys(name)
     f("#external_tool_consumer_key").send_keys(key)
     f("#external_tool_shared_secret").send_keys(secret)
@@ -181,6 +180,11 @@ shared_examples_for "external tools tests" do
         <lticm:property name="display_type">full_width</lticm:property>
       </lticm:options>
       <lticm:options name="discussion_topic_menu">
+        <lticm:property name="url">https://example.com/wiki</lticm:property>
+        <lticm:property name="text">Build/Link to Wiki Page</lticm:property>
+        <lticm:property name="display_type">full_width</lticm:property>
+      </lticm:options>
+      <lticm:options name="file_menu">
         <lticm:property name="url">https://example.com/wiki</lticm:property>
         <lticm:property name="text">Build/Link to Wiki Page</lticm:property>
         <lticm:property name="display_type">full_width</lticm:property>

@@ -74,7 +74,8 @@
       &:hover, &:focus
         :background-position     left -31px
       &:focus
-        @include button-focus
+        @if $use_high_contrast
+          @include button-focus
       &:active
         :background-position     bottom left
     .next
@@ -557,7 +558,7 @@ body .ui-selectmenu-dropdown:hover .ui-selectmenu-icon, body .ui-state-active .u
         &.selected
           font-weight: bold
 
-#no_annotation_warning
+.speedgrader_alert
   position: absolute
   left: 50%
   margin-left: -150px

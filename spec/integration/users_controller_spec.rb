@@ -16,7 +16,7 @@
 # with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
-require File.expand_path(File.dirname(__FILE__) + '/../spec_helper')
+require File.expand_path(File.dirname(__FILE__) + '/../sharding_spec_helper')
 
 describe UsersController do
   describe "#teacher_activity" do
@@ -108,6 +108,21 @@ describe UsersController do
       expect(response).to be_success
       expect(response.body).to match(/studentname1/)
     end
+
+    context "sharding" do
+      specs_require_sharding
+
+      it "should show activity for students located on another shard" do
+        @shard1.activate do
+          @student = user(:name => "im2spoopy4u")
+        end
+        course_with_student(:course => @course, :user => @student, :active_all => true)
+
+        get user_student_teacher_activity_url(@teacher, @student)
+        expect(response).to be_success
+        expect(response.body).to include(@student.name)
+      end
+    end
   end
 
   describe "#index" do
@@ -156,9 +171,11 @@ describe UsersController do
     it "should show user to account users that have the view_statistics permission" do
       account_model
       student_in_course(:account => @account)
+
+      role = custom_account_role('custom', :account => @account)
       RoleOverride.create!(:context => @account, :permission => 'view_statistics',
-                           :enrollment_type => 'AccountMembership', :enabled => true)
-      @account.account_users.create!(user: user, membership_type: 'AccountMembership')
+                           :role => role, :enabled => true)
+      @account.account_users.create!(user: user, role: role)
       user_session(@user)
 
       get "/users/#{@student.id}"
@@ -168,9 +185,10 @@ describe UsersController do
     it "should show course user to account users that have the read_roster permission" do
       account_model
       student_in_course(:account => @account)
+      role = custom_account_role('custom', :account => @account)
       RoleOverride.create!(:context => @account, :permission => 'read_roster',
-                           :enrollment_type => 'AccountMembership', :enabled => true)
-      @account.account_users.create!(user: user, membership_type: 'AccountMembership')
+                           :role => role, :enabled => true)
+      @account.account_users.create!(user: user, role: role)
       user_session(@user)
 
       get "/courses/#{@course.id}/users/#{@student.id}"

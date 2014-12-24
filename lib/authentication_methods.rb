@@ -83,9 +83,18 @@ module AuthenticationMethods
     end
   end
 
+  def masked_authenticity_token
+    session_options = CanvasRails::Application.config.session_options
+    options = session_options.slice(:domain, :secure)
+    options[:httponly] = HostUrl.is_file_host?(request.host_with_port)
+    CanvasBreachMitigation::MaskingSecrets.masked_authenticity_token(cookies, options)
+  end
+  private :masked_authenticity_token
+
   def load_user
     @current_user = @current_pseudonym = nil
-    CanvasBreachMitigation::MaskingSecrets.masked_authenticity_token(cookies) # ensure that the cookie is set
+
+    masked_authenticity_token # ensure that the cookie is set
 
     load_pseudonym_from_access_token
 
@@ -106,6 +115,7 @@ module AuthenticationMethods
           (session_refreshed_at = request.env['encrypted_cookie_store.session_refreshed_at']) &&
           session_refreshed_at < invalid_before
 
+          logger.info "Invalidating session: Session created before user logged out."
           destroy_session
           @current_pseudonym = nil
           if api_request? || request.format.json?
@@ -119,6 +129,7 @@ module AuthenticationMethods
          @current_pseudonym.cas_ticket_expired?(session[:cas_session]) &&
          @domain_root_account.cas_authentication?
 
+        logger.info "Invalidating session: CAS ticket expired - #{session[:cas_session]}."
         destroy_session
         @current_pseudonym = nil
 

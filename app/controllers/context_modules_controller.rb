@@ -27,7 +27,7 @@ class ContextModulesController < ApplicationController
       @collapsed_modules = ContextModuleProgression.for_user(@current_user).for_modules(@modules).select([:context_module_id, :collapsed]).select{|p| p.collapsed? }.map(&:context_module_id)
 
       @menu_tools = {}
-      [:assignment_menu, :module_menu, :quiz_menu, :wiki_page_menu].each do |type|
+      [:assignment_menu, :discussion_topic_menu, :file_menu, :module_menu, :quiz_menu, :wiki_page_menu].each do |type|
         @menu_tools[type] = ContextExternalTool.all_tools_for(@context, :type => type,
           :root_account => @domain_root_account, :current_user => @current_user)
       end
@@ -342,12 +342,15 @@ class ContextModulesController < ApplicationController
     @module = @context.context_modules.not_deleted.find(params[:context_module_id])
     if authorized_action(@module, @current_user, :update)
       @tag = @module.add_item(params[:item])
-      @tag[:publishable] = module_item_publishable?(@tag)
-      @tag[:published] = @tag.published?
-      @tag[:publishable_id] = module_item_publishable_id(@tag)
-      @tag[:unpublishable] = module_item_unpublishable?(@tag)
-      @tag[:graded] = @tag.graded?
-      render :json => @tag
+      json = @tag.as_json
+      json['content_tag'].merge!(
+          publishable: module_item_publishable?(@tag),
+          published: @tag.published?,
+          publishable_id: module_item_publishable_id(@tag),
+          unpublishable:  module_item_unpublishable?(@tag),
+          graded: @tag.graded?
+        )
+      render json: json
     end
   end
   
@@ -408,10 +411,10 @@ class ContextModulesController < ApplicationController
   def update
     @module = @context.context_modules.not_deleted.find(params[:id])
     if authorized_action(@module, @current_user, :update)
-      if params.delete :publish
+      if params[:publish]
         @module.publish
         @module.publish_items!
-      elsif params.delete :unpublish
+      elsif params[:unpublish]
         @module.unpublish
       end
       respond_to do |format|

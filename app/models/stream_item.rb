@@ -35,7 +35,7 @@ class StreamItem < ActiveRecord::Base
 
   attr_accessible :context, :asset
   after_destroy :destroy_stream_item_instances
-  attr_accessor :unread, :participant
+  attr_accessor :unread, :participant, :invalidate_immediately
 
   def self.reconstitute_ar_object(type, data)
     return nil unless data
@@ -270,8 +270,8 @@ class StreamItem < ActiveRecord::Base
         lock_type = true
         lock_type = 'FOR NO KEY UPDATE' if User.connection.adapter_name == 'PostgreSQL' && User.connection.send(:postgresql_version) >= 90300
         # lock the rows in a predefined order to prevent deadlocks
-        User.where(id: user_ids).lock(lock_type).order(:id).pluck(:id)
-        User.where(id: user_ids).update_all(updated_at: Time.now.utc)
+        ids_to_touch = User.where(id: user_ids_subset).not_recently_touched.lock(lock_type).order(:id).pluck(:id)
+        User.where(id: ids_to_touch).update_all(updated_at: Time.now.utc)
       end
     end
 
@@ -301,6 +301,8 @@ class StreamItem < ActiveRecord::Base
   def self.object_unread_for_user(object, user_id)
     case object
     when DiscussionTopic
+      object.read_state(user_id)
+    when Submission
       object.read_state(user_id)
     else
       nil
@@ -340,7 +342,9 @@ class StreamItem < ActiveRecord::Base
         if touch_users
           user_ids.add(item.stream_item_instances.map(&:user_id))
         end
+
         # this will destroy the associated stream_item_instances as well
+        item.invalidate_immediately = true
         item.destroy
       end
       break if batch.empty?
@@ -401,6 +405,13 @@ class StreamItem < ActiveRecord::Base
   public
   def destroy_stream_item_instances
     self.stream_item_instances.with_each_shard do |scope|
+      user_ids = scope.pluck(:user_id)
+      if !self.invalidate_immediately && user_ids.count > 100
+        StreamItemCache.send_later_if_production_enqueue_args(:invalidate_all_recent_stream_items,
+          { :priority => Delayed::LOW_PRIORITY }, user_ids, self.context_type, self.context_id)
+      else
+        StreamItemCache.invalidate_all_recent_stream_items(user_ids, self.context_type, self.context_id)
+      end
       scope.delete_all
       nil
     end

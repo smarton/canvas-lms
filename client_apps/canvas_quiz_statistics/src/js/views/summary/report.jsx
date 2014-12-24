@@ -5,6 +5,7 @@ define(function(require) {
   var Status = require('jsx!./report/status');
   var Popup = require('jsx!../../components/popup');
   var ScreenReaderContent = require('jsx!../../components/screen_reader_content');
+  var SightedUserContent = require('jsx!../../components/sighted_user_content');
   var Descriptor = require('../../models/quiz_report_descriptor');
 
   var Report = React.createClass({
@@ -52,6 +53,7 @@ define(function(require) {
           <Popup
             ref="popup"
             content={Status}
+            id={this.props.id}
             isGenerated={this.props.isGenerated}
             isGenerating={this.props.isGenerating}
             generatable={this.props.generatable}
@@ -65,12 +67,12 @@ define(function(require) {
                   event: 'mouseenter focusin',
                   delay: 0,
                   effect: false,
-                  solo: false
+                  solo: true
                 },
 
                 hide: {
                   event: 'mouseleave focusout',
-                  delay: 0,
+                  delay: 350,
                   effect: false,
                   fixed: true,
                 },
@@ -100,9 +102,9 @@ define(function(require) {
           onKeyPress={this.generateAndFocusContent}
           className="btn btn-link generate-report">
             <ScreenReaderContent children={srLabel} />
-            <span aria-hidden="true">
+            <SightedUserContent>
               <i className="icon-analytics" /> {this.props.readableType}
-            </span>
+            </SightedUserContent>
         </button>
       );
     },
@@ -114,9 +116,9 @@ define(function(require) {
         <a href={this.props.file.url} className="btn btn-link download-report">
           <ScreenReaderContent children={srLabel} />
 
-          <span aria-hidden="true">
+          <SightedUserContent>
             <i className="icon-analytics" /> {this.props.readableType}
-          </span>
+          </SightedUserContent>
         </a>
       );
     },

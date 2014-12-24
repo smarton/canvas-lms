@@ -14,6 +14,7 @@ define [
   'compiled/views/assignments/AssignmentGroupSelector'
   'compiled/views/assignments/GroupCategorySelector'
   'compiled/jquery/toggleAccessibly'
+  'compiled/views/editor/KeyboardShortcuts'
   'compiled/tinymce'
   'tinymce.editor_box'
   'jqueryui/dialog'
@@ -21,7 +22,7 @@ define [
   'compiled/jquery.rails_flash_notifications'
 ], (INST, I18n, ValidatedFormView, _, $, wikiSidebar, template,
 userSettings, TurnitinSettings, TurnitinSettingsDialog, preventDefault, MissingDateDialog,
-AssignmentGroupSelector, GroupCategorySelector, toggleAccessibly) ->
+AssignmentGroupSelector, GroupCategorySelector, toggleAccessibly, RCEKeyboardShortcuts) ->
 
   class EditView extends ValidatedFormView
 
@@ -46,6 +47,8 @@ AssignmentGroupSelector, GroupCategorySelector, toggleAccessibly) ->
     GROUP_CATEGORY_SELECTOR = '#group_category_selector'
     PEER_REVIEWS_FIELDS = '#assignment_peer_reviews_fields'
     EXTERNAL_TOOLS_URL = '#assignment_external_tool_tag_attributes_url'
+    EXTERNAL_TOOLS_CONTENT_TYPE = '#assignment_external_tool_tag_attributes_content_type'
+    EXTERNAL_TOOLS_CONTENT_ID = '#assignment_external_tool_tag_attributes_content_id'
     EXTERNAL_TOOLS_NEW_TAB = '#assignment_external_tool_tag_attributes_new_tab'
 
     els: _.extend({}, @::els, do ->
@@ -68,6 +71,8 @@ AssignmentGroupSelector, GroupCategorySelector, toggleAccessibly) ->
       els["#{PEER_REVIEWS_FIELDS}"] = '$peerReviewsFields'
       els["#{EXTERNAL_TOOLS_URL}"] = '$externalToolsUrl'
       els["#{EXTERNAL_TOOLS_NEW_TAB}"] = '$externalToolsNewTab'
+      els["#{EXTERNAL_TOOLS_CONTENT_TYPE}"] = '$externalToolsContentType'
+      els["#{EXTERNAL_TOOLS_CONTENT_ID}"] = '$externalToolsContentId'
       els
     )
 
@@ -139,6 +144,8 @@ AssignmentGroupSelector, GroupCategorySelector, toggleAccessibly) ->
         select_button_text: I18n.t('buttons.select_url', 'Select'),
         no_name_input: true,
         submit: (data) =>
+          @$externalToolsContentType.val(data['item[type]'])
+          @$externalToolsContentId.val(data['item[id]'])
           @$externalToolsUrl.val(data['item[url]'])
           @$externalToolsNewTab.prop('checked', data['item[new_tab]'] == '1')
 
@@ -166,6 +173,7 @@ AssignmentGroupSelector, GroupCategorySelector, toggleAccessibly) ->
     afterRender: =>
       @_attachEditorToDescription()
       $ @_initializeWikiSidebar
+      @addTinyMCEKeyboardShortcuts()
       this
 
     toJSON: =>
@@ -191,6 +199,10 @@ AssignmentGroupSelector, GroupCategorySelector, toggleAccessibly) ->
         wikiSidebar.init()
         $.scrollSidebar()
       wikiSidebar.attachToEditor(@$description).show()
+
+    addTinyMCEKeyboardShortcuts: =>
+      keyboardShortcutsView = new RCEKeyboardShortcuts()
+      keyboardShortcutsView.render().$el.insertBefore($(".rte_switch_views_link:first"))
 
     # -- Data for Submitting --
     getFormData: =>

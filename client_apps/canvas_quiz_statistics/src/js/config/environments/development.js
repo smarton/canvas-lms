@@ -1,10 +1,14 @@
 define(function(require) {
-  var rawAjax = require('../../util/xhr_request');
   var $ = require('canvas_packages/jquery');
   var Root = this;
   var DEBUG = {
   };
 
+  // You can use this in development_local.js to expose certain modules that
+  // are hard to reach from the console. Example:
+  //
+  //   DEBUG.expose('stores/reports', 'reportStore');
+  //   DEBUG.reportStore; // ReportStore
   DEBUG.expose = function(script, varName) {
     require([ script ], function(__script__) {
       DEBUG[varName] = __script__;
@@ -15,10 +19,6 @@ define(function(require) {
     DEBUG.app = app;
     DEBUG.update = app.update;
   });
-
-  DEBUG.expose('react', 'React');
-  DEBUG.expose('util/round', 'round');
-  DEBUG.expose('stores/statistics', 'statisticsStore');
 
   Root.DEBUG = DEBUG;
   Root.d = DEBUG;

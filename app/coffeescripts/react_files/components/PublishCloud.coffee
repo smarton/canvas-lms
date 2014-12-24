@@ -25,6 +25,14 @@ define [
     componentWillUnmount: ->
       @props.model.off(null, null, this)
 
+    getRestrictedText: ->
+      if @props.model.get('unlock_at') and @props.model.get('lock_at')
+        I18n.t("Available after %{unlock_at} until %{lock_at}", unlock_at: $.datetimeString(@props.model.get('unlock_at')), lock_at: $.datetimeString(@props.model.get('lock_at')))
+      else if @props.model.get('unlock_at') and not @props.model.get('lock_at')
+        I18n.t("Available after %{unlock_at}", unlock_at: $.datetimeString(@props.model.get('unlock_at')))
+      else if not @props.model.get('unlock_at') and @props.model.get('lock_at')
+        I18n.t("Available until %{lock_at}", lock_at: $.datetimeString(@props.model.get('lock_at')))
+
     # == Custom Functions == #
 
     # Function Summary
@@ -56,56 +64,56 @@ define [
     openRestrictedDialog: ->
       $dialog = $('<div>').dialog
         title: I18n.t("title.permissions", "Editing permissions for: %{name}", {name: @props.model.displayName()})
-        width: 400
+        width: 800
+        minHeight: 300
         close: ->
           React.unmountComponentAtNode this
           $(this).remove()
 
       React.renderComponent(RestrictedDialogForm({
+        usageRightsRequiredForContext: @props.usageRightsRequiredForContext
         models: [@props.model]
         closeDialog: -> $dialog.dialog('close')
       }), $dialog[0])
 
-    # Function Summary
-    # Opens the restricted dialog window
-
-    handleClick: (event) ->
-      event.preventDefault()
-      @openRestrictedDialog()
 
     render: withReactDOM ->
       if @props.userCanManageFilesForContext
         if @state.published && @state.restricted
-          button 
+          button
+            type: 'button'
             'data-tooltip': 'left'
-            onClick: @handleClick
+            onClick: @openRestrictedDialog
             ref: "publishCloud"
             className:'btn-link published-status restricted'
-            title: I18n.t('restricted_title', "Available from %{from_date} until %{until_date}",from_date: $.datetimeString(@props.model.get('unlock_at')), until_date: $.datetimeString(@props.model.get('lock_at')) )
-            'aria-label': I18n.t('restricted_title', "Available from %{from_date} until %{until_date}",from_date: $.datetimeString(@props.model.get('unlock_at')), until_date: $.datetimeString(@props.model.get('lock_at')) ),
-              i className:'icon-calendar-day'
+            title: @getRestrictedText()
+            'aria-label': @getRestrictedText(),
+              i className:'icon-cloud-lock'
         else if @state.published && @state.hidden
-          button 
+          button
+            type: 'button'
             'data-tooltip': 'left'
-            onClick: @handleClick
+            onClick: @openRestrictedDialog
             ref: "publishCloud"
             className:'btn-link published-status hiddenState'
             title: I18n.t('hidden_title', 'Hidden. Available with a link')
             'aria-label': I18n.t('label.hidden', 'Hidden. Available with a link'),
-              i className:'icon-paperclip'
+              i className:'icon-cloud-lock'
         else if @state.published
-          button 
+          button
+            type: 'button'
             'data-tooltip': 'left'
-            onClick: @handleClick,
+            onClick: @openRestrictedDialog,
             ref: "publishCloud",
             className:'btn-link published-status published'
             title: I18n.t('published_title', 'Published')
             'aria-label': I18n.t('label.published', 'Published'),
               i className:'icon-publish'
         else
-          button 
+          button
+            type: 'button'
             'data-tooltip': 'left'
-            onClick: @handleClick
+            onClick: @openRestrictedDialog
             ref: "publishCloud"
             className:'btn-link published-status unpublished'
             title: I18n.t('unpublished_title', 'Unpublished')
@@ -113,13 +121,13 @@ define [
               i className:'icon-unpublish'
       else
         if @state.published && @state.restricted
-          div 
+          div
             'style': {'margin-right': '12px'}
             'data-tooltip': 'left'
             ref: "publishCloud"
             className:'published-status restricted'
-            title: I18n.t('restricted_title', "Available from %{from_date} until %{until_date}",from_date: $.datetimeString(@props.model.get('unlock_at')), until_date: $.datetimeString(@props.model.get('lock_at')) )
-            'aria-label': I18n.t('restricted_title', "Available from %{from_date} until %{until_date}",from_date: $.datetimeString(@props.model.get('unlock_at')), until_date: $.datetimeString(@props.model.get('lock_at')) ),
+            title: @getRestrictedText()
+            'aria-label': @getRestrictedText(),
               i className:'icon-calendar-day'
         else
           div

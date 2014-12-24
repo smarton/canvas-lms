@@ -23,10 +23,14 @@ module Lti
     skip_before_filter :require_user, only: [:create, :show]
     skip_before_filter :load_user, only: [:create, :show]
 
+    rescue_from 'Lti::ToolProxyService::InvalidToolProxyError', only: :create do |exception|
+      render json: {error: exception.message}, status: 400
+    end
+
     def show
       tool_proxy = ToolProxy.where(guid: params['tool_proxy_guid']).first
       if tool_proxy && oauth_authenticated_request?(tool_proxy.shared_secret)
-        render json: tool_proxy.raw_data
+        render json: tool_proxy.raw_data, content_type: 'application/vnd.ims.lti.v2.toolproxy+json'
       else
         render json: {error: 'unauthorized'}, status: :unauthorized
       end
@@ -43,9 +47,26 @@ module Lti
           "tool_proxy_guid" => tool_proxy.guid
         }
 
-        render json: json, status: :created
+        #TODO: setting the tool_proxy to active should be a initiated through the UI by an admin/teacher
+        tool_proxy.update_attribute(:workflow_state, 'active')
+
+        #TODO: this needs to be moved to whatever changes the workflow state to active
+        invalidate_nav_tabs_cache(tool_proxy)
+
+        render json: json, status: :created, content_type: 'application/vnd.ims.lti.v2.toolproxy.id+json'
       else
         render json: {error: 'unauthorized'}, status: :unauthorized
+      end
+    end
+
+
+    private
+
+    def invalidate_nav_tabs_cache(tool_proxy)
+      placements = Set.new
+      tool_proxy.resources.each {|rh| placements.merge(rh.placements.map(&:placement))}
+      if (placements & [ResourcePlacement::COURSE_NAVIGATION, ResourcePlacement::ACCOUNT_NAVIGATION]).count > 0
+        Lti::NavigationCache.new(@domain_root_account).invalidate_cache_key
       end
     end
 

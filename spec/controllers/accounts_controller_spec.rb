@@ -55,8 +55,7 @@ describe AccountsController do
 
     it "should not confirm deletion of non-existent users" do
       get 'confirm_delete_user', :account_id => @account.id, :user_id => (User.all.map(&:id).max + 1)
-      expect(response).to redirect_to(account_url(@account))
-      expect(flash[:error]).to match /No user found with that id/
+      expect(response).to be_not_found
     end
 
     it "should confirm deletion of managed password users" do
@@ -70,63 +69,74 @@ describe AccountsController do
     before(:once) { account_with_admin }
     before(:each) { user_session(@admin) }
 
-    it "should delete canvas-authenticated users" do
+    it "should remove user from the account" do
       user_with_pseudonym :account => @account
-      expect(@user.workflow_state).to eq "pre_registered"
       post 'remove_user', :account_id => @account.id, :user_id => @user.id
       expect(flash[:notice]).to match /successfully deleted/
       expect(response).to redirect_to(account_users_url(@account))
-      @user.reload
-      expect(@user.workflow_state).to eq "deleted"
+      expect(@user.associated_accounts.map(&:id)).not_to include(@account.id)
     end
 
-    it "should do nothing for non-existent users as html" do
+    it "should 404 for non-existent users as html" do
       post 'remove_user', :account_id => @account.id, :user_id => (User.all.map(&:id).max + 1)
       expect(flash[:notice]).to be_nil
-      expect(response).to redirect_to(account_users_url(@account))
+      expect(response).to be_not_found
     end
 
-    it "should do nothing for non-existent users as json" do
+    it "should 404 for non-existent users as json" do
       post 'remove_user', :account_id => @account.id, :user_id => (User.all.map(&:id).max + 1), :format => "json"
       expect(flash[:notice]).to be_nil
-      expect(json_parse(response.body)).to eq({})
+      expect(response).to be_not_found
     end
 
-    it "should only remove users from the current account if the user exists in multiple accounts" do
+    it "should only remove user from the account, but not delete them" do
+      user_with_pseudonym :account => @account
+      workflow_state_was = @user.workflow_state
+      post 'remove_user', :account_id => @account.id, :user_id => @user.id
+      expect(@user.reload.workflow_state).to eql workflow_state_was
+    end
+
+    it "should only remove users from the specified account" do
       @other_account = account_model
       account_with_admin_logged_in
       user_with_pseudonym :account => @account, :username => "nobody@example.com"
       pseudonym @user, :account => @other_account, :username => "nobody2@example.com"
-      expect(@user.workflow_state).to eq "pre_registered"
-      expect(@user.associated_accounts.map(&:id).include?(@account.id)).to be_truthy
-      expect(@user.associated_accounts.map(&:id).include?(@other_account.id)).to be_truthy
       post 'remove_user', :account_id => @account.id, :user_id => @user.id
       expect(flash[:notice]).to match /successfully deleted/
       expect(response).to redirect_to(account_users_url(@account))
-      @user.reload
-      expect(@user.workflow_state).to eq "pre_registered"
-      expect(@user.associated_accounts.map(&:id).include?(@account.id)).to be_falsey
-      expect(@user.associated_accounts.map(&:id).include?(@other_account.id)).to be_truthy
+      expect(@user.associated_accounts.map(&:id)).not_to include(@account.id)
+      expect(@user.associated_accounts.map(&:id)).to include(@other_account.id)
     end
 
-    it "should delete users who have managed passwords with html" do
+    it "should delete the user's CCs when removed from their last account" do
+      user_with_pseudonym :account => @account
+      post 'remove_user', :account_id => @account.id, :user_id => @user.id
+      expect(@user.communication_channels.unretired).to be_empty
+    end
+
+    it "should not delete the user's CCs when other accounts remain" do
+      @other_account = account_model
+      account_with_admin_logged_in
+      user_with_pseudonym :account => @account, :username => "nobody@example.com"
+      pseudonym @user, :account => @other_account, :username => "nobody2@example.com"
+      post 'remove_user', :account_id => @account.id, :user_id => @user.id
+      expect(@user.communication_channels.unretired).not_to be_empty
+    end
+
+    it "should remove users with managed passwords with html" do
       user_with_managed_pseudonym :account => @account
-      expect(@user.workflow_state).to eq "pre_registered"
       post 'remove_user', :account_id => @account.id, :user_id => @user.id
       expect(flash[:notice]).to match /successfully deleted/
       expect(response).to redirect_to(account_users_url(@account))
-      @user.reload
-      expect(@user.workflow_state).to eq "deleted"
+      expect(@user.associated_accounts.map(&:id)).not_to include(@account.id)
     end
 
-    it "should delete users who have managed passwords with json" do
-      user_with_managed_pseudonym :account => @account
-      expect(@user.workflow_state).to eq "pre_registered"
+    it "should remove users with managed passwords with json" do
+      user_with_managed_pseudonym :account => @account, :name => "John Doe"
       post 'remove_user', :account_id => @account.id, :user_id => @user.id, :format => "json"
       expect(flash[:notice]).to match /successfully deleted/
-      @user = json_parse(@user.reload.to_json)
-      expect(json_parse(response.body)).to eq @user
-      expect(@user["user"]["workflow_state"]).to eq "deleted"
+      expect(json_parse(response.body)).to eq json_parse(@user.reload.to_json)
+      expect(@user.associated_accounts.map(&:id)).to_not include(@account.id)
     end
   end
 
@@ -135,7 +145,7 @@ describe AccountsController do
     before(:each) { user_session(@admin) }
 
     it "should allow adding a new account admin" do
-      post 'add_account_user', :account_id => @account.id, :membership_type => 'AccountAdmin', :user_list => 'testadmin@example.com'
+      post 'add_account_user', :account_id => @account.id, :role_id => admin_role.id, :user_list => 'testadmin@example.com'
       expect(response).to be_success
 
       new_admin = CommunicationChannel.where(path: 'testadmin@example.com').first.user
@@ -144,10 +154,22 @@ describe AccountsController do
       expect(@account.account_users.map(&:user)).to be_include(new_admin)
     end
 
+    it "should allow adding a new custom account admin" do
+      role = custom_account_role('custom', :account => @account)
+      post 'add_account_user', :account_id => @account.id, :role_id => role.id, :user_list => 'testadmin@example.com'
+      expect(response).to be_success
+
+      new_admin = CommunicationChannel.find_by_path('testadmin@example.com').user
+      expect(new_admin).to_not be_nil
+      @account.reload
+      expect(@account.account_users.map(&:user)).to be_include(new_admin)
+      expect(@account.account_users.find_by_role_id(role.id).user).to eq new_admin
+    end
+
     it "should allow adding an existing user to a sub account" do
       @subaccount = @account.sub_accounts.create!
       @munda = user_with_pseudonym(:account => @account, :active_all => 1, :username => 'munda@instructure.com')
-      post 'add_account_user', :account_id => @subaccount.id, :membership_type => 'AccountAdmin', :user_list => 'munda@instructure.com'
+      post 'add_account_user', :account_id => @subaccount.id, :role_id => admin_role.id, :user_list => 'munda@instructure.com'
       expect(response).to be_success
       expect(@subaccount.account_users.map(&:user)).to eq [@munda]
     end
@@ -289,9 +311,28 @@ describe AccountsController do
       expect(@account.sis_source_id).to be_nil
     end
 
+    it "should not allow admins to set the trusted_referers on sub accounts" do
+      account_with_admin_logged_in
+      @account = @account.sub_accounts.create!
+      post 'update', :id => @account.id, :account => { :settings => {
+        :trusted_referers => 'http://example.com'
+      } }
+      @account.reload
+      expect(@account.settings[:trusted_referers]).to be_nil
+    end
+
+    it "should allow admins to set the trusted_referers on root accounts" do
+      account_with_admin_logged_in
+      post 'update', :id => @account.id, :account => { :settings => {
+        :trusted_referers => 'http://example.com'
+      } }
+      @account.reload
+      expect(@account.settings[:trusted_referers]).to eq 'http://example.com'
+    end
+
     it "should not allow non-site-admins to update certain settings" do
       account_with_admin_logged_in
-      post 'update', :id => @account.id, :account => { :settings => { 
+      post 'update', :id => @account.id, :account => { :settings => {
         :global_includes => true,
         :enable_profiles => true,
         :admins_can_change_passwords => true,
@@ -309,7 +350,7 @@ describe AccountsController do
       user_session(@user)
       @account = Account.create!
       Account.site_admin.account_users.create!(user: @user)
-      post 'update', :id => @account.id, :account => { :settings => { 
+      post 'update', :id => @account.id, :account => { :settings => {
         :global_includes => true,
         :enable_profiles => true,
         :admins_can_change_passwords => true,
@@ -356,17 +397,17 @@ describe AccountsController do
       before :each do
         user_session(@user)
       end
-      
+
       context "with :manage_storage_quotas" do
         before :once do
-          custom_account_role 'quota-setter', :account => @account
+          role = custom_account_role 'quota-setter', :account => @account
           @account.role_overrides.create! :permission => 'manage_account_settings', :enabled => true,
-                                          :enrollment_type => 'quota-setter'
+                                          :role => role
           @account.role_overrides.create! :permission => 'manage_storage_quotas', :enabled => true,
-                                          :enrollment_type => 'quota-setter'
-          @account.account_users.create!(user: @user, membership_type: 'quota-setter')
+                                          :role => role
+          @account.account_users.create!(user: @user, role: role)
         end
-        
+
         it "should allow setting default quota (mb)" do
           post 'update', :id => @account.id, :account => {
               :default_storage_quota_mb => 999,
@@ -378,7 +419,7 @@ describe AccountsController do
           expect(@account.default_user_storage_quota_mb).to eq 99
           expect(@account.default_group_storage_quota_mb).to eq 9999
         end
-        
+
         it "should allow setting default quota (bytes)" do
           post 'update', :id => @account.id, :account => {
               :default_storage_quota => 101.megabytes,
@@ -386,7 +427,7 @@ describe AccountsController do
           @account.reload
           expect(@account.default_storage_quota).to eq 101.megabytes
         end
-        
+
         it "should allow setting storage quota" do
           post 'update', :id => @account.id, :account => {
             :storage_quota => 777.megabytes
@@ -395,15 +436,15 @@ describe AccountsController do
           expect(@account.storage_quota).to eq 777.megabytes
         end
       end
-      
+
       context "without :manage_storage_quotas" do
         before :once do
-          custom_account_role 'quota-loser', :account => @account
+          role = custom_account_role 'quota-loser', :account => @account
           @account.role_overrides.create! :permission => 'manage_account_settings', :enabled => true,
-                                          :enrollment_type => 'quota-loser'
-          @account.account_users.create!(user: @user, membership_type: 'quota-loser')
+                                          :role => role
+          @account.account_users.create!(user: @user, role: role)
         end
-        
+
         it "should disallow setting default quota (mb)" do
           post 'update', :id => @account.id, :account => {
               :default_storage_quota => 999,
@@ -494,6 +535,75 @@ describe AccountsController do
       expect(response).to be_success
 
       expect(assigns[:last_reports].first.last).to eq report
+    end
+
+    context "external_integration_keys" do
+      before(:once) do
+        ExternalIntegrationKey.key_type :external_key0, rights: { write: true }
+        ExternalIntegrationKey.key_type :external_key1, rights: { write: false }
+        ExternalIntegrationKey.key_type :external_key2, rights: { write: true }
+      end
+
+      before do
+        user
+        user_session(@user)
+        @account = Account.create!
+        Account.site_admin.account_users.create!(user: @user)
+
+        @eik = ExternalIntegrationKey.new
+        @eik.context = @account
+        @eik.key_type = :external_key0
+        @eik.key_value = '42'
+        @eik.save
+      end
+
+      it "should load account external integration keys" do
+        get 'settings', account_id: @account
+        expect(response).to be_success
+
+        external_integration_keys = assigns[:external_integration_keys]
+        expect(external_integration_keys.keys).to include('external_key0')
+        expect(external_integration_keys.keys).to include('external_key1')
+        expect(external_integration_keys.keys).to include('external_key2')
+        expect(external_integration_keys[:external_key0]).to eq @eik
+      end
+
+      it "should create a new external integration key" do
+        key_value = "2142"
+        post 'update', :id => @account.id, :account => { :external_integration_keys => {
+          external_key0: "42",
+          external_key2: key_value
+        } }
+        @account.reload
+        eik = @account.external_integration_keys.where(key_type: :external_key2).first
+        expect(eik).to_not be_nil
+        expect(eik.key_value).to eq "2142"
+      end
+
+      it "should update an existing external integration key" do
+        key_value = "2142"
+        post 'update', :id => @account.id, :account => { :external_integration_keys => {
+          external_key0: key_value,
+          external_key1: key_value,
+          external_key2: key_value
+        } }
+        @account.reload
+
+        # Should not be able to edit external_key1.  The user does not have the rights.
+        eik = @account.external_integration_keys.where(key_type: :external_key1).first
+        expect(eik).to be_nil
+
+        eik = @account.external_integration_keys.where(key_type: :external_key0).first
+        expect(eik.id).to eq @eik.id
+        expect(eik.key_value).to eq "2142"
+      end
+
+      it "should delete an external integration key when not provided or the value is blank" do
+        post 'update', :id => @account.id, :account => { :external_integration_keys => {
+          external_key0: nil
+        } }
+        expect(@account.external_integration_keys.count).to eq 0
+      end
     end
   end
 end

@@ -238,7 +238,7 @@ $context_module_bg_color: #f2f3f4
       display: none
     .icon-quiz
       display: inline-block
-  &.external_url, &.context_external_tool
+  &.external_url, &.context_external_tool, &.lti\/message_handler
     .icon-document
       display: none
     .icon-link
@@ -445,6 +445,14 @@ $context_module_bg_color: #f2f3f4
 
 .context_module_item:not(.assignment)
   li.assignment_menu
+    display: none
+
+.context_module_item:not(.discussion_topic)
+  li.discussion_topic_menu
+    display: none
+
+.context_module_item:not(.attachment)
+  li.file_menu
     display: none
 
 .context_module_item:not(.quiz)

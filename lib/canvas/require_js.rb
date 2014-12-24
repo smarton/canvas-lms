@@ -61,7 +61,7 @@ module Canvas
         @paths ||= {
           :common => 'compiled/bundles/common',
           :jqueryui => 'vendor/jqueryui',
-          :uploadify => '../flash/uploadify/jquery.uploadify-3.1.min',
+          :uploadify => '../flash/uploadify/jquery.uploadify-3.2.min',
         }.update(cache_busting ? cache_busting_paths : {}).
           update(plugin_paths).
           update(Canvas::RequireJs::PluginExtension.paths).
@@ -142,6 +142,9 @@ module Canvas
             'handlebars': {
               deps: ['bower/handlebars/handlebars.runtime.amd'],
               exports: 'Handlebars'
+            },
+            'vendor/i18n': {
+              exports: 'I18n'
             }
           }
         JS

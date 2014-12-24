@@ -30,17 +30,26 @@ describe FilePreviewsController do
   end
 
   it "should require authorization to view the file" do
-    attachment_model locked: true
+    course_model
+    attachment_model
     get :show, course_id: @course.id, file_id: @attachment.id
     expect(response.status).to eq 401
   end
 
-  it "should 404 if the file doesn't exist" do
+  it "should render lock information for the file" do
+    attachment_model locked: true
+    get :show, course_id: @course.id, file_id: @attachment.id
+    expect(response).to render_template 'lock_explanation'
+  end
+
+  it "should 404 (w/o canvas chrome) if the file doesn't exist" do
     attachment_model
     file_id = @attachment.id
     @attachment.destroy!
     get :show, course_id: @course.id, file_id: file_id
     expect(response.status).to eq 404
+    expect(assigns['headers']).to eq false
+    expect(assigns['show_left_side']).to eq false
   end
 
   it "should redirect to crododoc_url if available and params[:annotate] is given" do
@@ -103,5 +112,12 @@ describe FilePreviewsController do
     expect(mod.evaluate_for(@user).workflow_state).to eq "unlocked"
     get :show, course_id: @course.id, file_id: @attachment.id
     expect(mod.evaluate_for(@user).workflow_state).to eq "completed"
+  end
+
+  it "should work with hidden files" do
+    attachment_model content_type: 'image/png'
+    @attachment.update_attribute(:file_state, 'hidden')
+    get :show, course_id: @course.id, file_id: @attachment.id
+    expect(response).to be_success
   end
 end

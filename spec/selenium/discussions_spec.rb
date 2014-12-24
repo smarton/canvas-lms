@@ -4,7 +4,7 @@ require File.expand_path(File.dirname(__FILE__) + '/helpers/discussions_common')
 describe "discussions" do
   include_examples "in-process server selenium tests"
 
-  let(:course) { course_model.tap(&:offer!) }
+  let(:course) { course_model.tap{|course| course.offer!; set_course_draft_state(:course => course)} }
   let(:default_section) { course.default_section }
   let(:new_section) { course.course_sections.create!(name: "section 2") }
   let(:section_student) do
@@ -110,20 +110,6 @@ describe "discussions" do
 
       context "with blank pages fetched from server" do
         it "should display empty version of view if there are no topics" do
-          get url
-          wait_for_ajaximations
-          ff('.no-content').each { |div| expect(div).to be_displayed }
-        end
-
-        it "should display empty version of view if all pages are empty" do
-          (1..15).each do |n|
-            course.discussion_topics.create!({
-                                               :title => "general topic #{n}",
-                                               :discussion_type => 'side_comment',
-                                               :delayed_post_at => 5.days.from_now,
-                                             })
-          end
-
           get url
           wait_for_ajaximations
           ff('.no-content').each { |div| expect(div).to be_displayed }
@@ -753,8 +739,14 @@ describe "discussions" do
         f("#discussion-managebar .al-trigger").click
         expect_new_page_load { f(".discussion_locked_toggler").click }
         expect(f('.discussion-fyi').text).to eq 'This topic is closed for comments'
-        expect(ff('.discussion-reply-action')).to be_empty
         expect(DiscussionTopic.last.locked?).to be_truthy
+
+        expect(ff('.discussion-reply-action')).to_not be_empty # should let teachers reply
+
+        student_in_course(:course => @course, :active_all => true)
+        user_session(@student)
+        get url
+        expect(ff('.discussion-reply-action')).to be_empty
       end
 
       it "should validate reopening the discussion for comments" do
@@ -1322,7 +1314,7 @@ describe "discussions" do
         get url
         replace_content(f('input[name=title]'), topic_title)
         add_attachment_and_validate
-        expect(DiscussionTopic.find_by_title(topic_title).attachment_id).to be_present
+        expect(DiscussionTopic.where(title: topic_title).first.attachment_id).to be_present
       end
 
       it "should create a podcast enabled topic" do

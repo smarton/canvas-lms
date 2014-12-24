@@ -63,6 +63,7 @@ class Attachment < ActiveRecord::Base
   has_many :thumbnails, :foreign_key => "parent_id"
   has_one :crocodoc_document
   has_one :canvadoc
+  belongs_to :usage_rights
 
   before_save :infer_display_name
   before_save :default_values
@@ -1184,7 +1185,7 @@ class Attachment < ActiveRecord::Base
   end
 
   def crocodocable?
-    Canvas::Crocodoc.config &&
+    Canvas::Crocodoc.enabled? &&
       CrocodocDocument::MIME_TYPES.include?(content_type)
   end
 
@@ -1221,7 +1222,13 @@ class Attachment < ActiveRecord::Base
     return if Attachment.skip_3rd_party_submits?
 
     if opts[:wants_annotation] && crocodocable?
-      submit_to_crocodoc(attempt)
+      # get crocodoc off the canvadocs strand
+      # (maybe :wants_annotation was a dumb idea)
+      send_later_enqueue_args :submit_to_crocodoc, {
+        n_strand: 'crocodoc',
+        max_attempts: 1,
+        priority: Delayed::LOW_PRIORITY,
+      }, attempt
     elsif canvadocable?
       doc = canvadoc || create_canvadoc
       doc.upload

@@ -65,16 +65,6 @@ describe Quizzes::Quiz do
       quiz.publish!
       expect(quiz.workflow_state).to eq 'available'
     end
-
-    it "regenerates quiz data when quiz published at date changes with draft state off" do
-      quiz = @course.quizzes.build :title => "hello"
-      quiz.workflow_state = 'available'
-      quiz.save!
-
-      quiz.expects(:generate_quiz_data).once
-      quiz.publish!
-      expect(quiz.workflow_state).to eq 'available'
-    end
   end
 
   describe "#unpublish!" do
@@ -647,6 +637,34 @@ describe Quizzes::Quiz do
     end
   end
 
+  describe "#build_user_question" do
+    it "should not duplicate questions from a bank" do
+      course_with_student
+
+      # create single bank
+      @bank = @course.assessment_question_banks.create!(:title=>'Test Bank')
+      @bank.assessment_questions.create!(:question_data => {'name' => 'Group Question 1', :question_type=>'essay_question', :question_text=>'gq1', 'answers' => []})
+
+      @quiz = @course.quizzes.create!(:title => "i'm tired quiz")
+
+      # both groups pull from the same bank
+      @group1 = @quiz.quiz_groups.create!(:name => "question group a", :pick_count => 1, :question_points => 5.0)
+      @group1.assessment_question_bank = @bank
+      @group1.save!
+
+      @group2 = @quiz.quiz_groups.create!(:name => "question group b", :pick_count => 1, :question_points => 5.0)
+      @group2.assessment_question_bank = @bank
+      @group2.save!
+
+      @quiz.generate_quiz_data
+      @quiz.save!
+      @quiz.reload
+
+      # building questions should never grab the same question from the bank
+      expect(@quiz.build_user_questions(false).length).to eq 1
+    end
+  end
+
   it "should return a default title if the quiz is untitled" do
     q = @course.quizzes.create!
     expect(q.quiz_title).to eql("Unnamed Quiz")
@@ -1186,31 +1204,6 @@ describe Quizzes::Quiz do
     end
   end
 
-  describe '#needs_republish?' do
-    subject { @course.quizzes.create!(title: 'Test Quiz') }
-
-    it 'should be true if publish! was manually called' do
-      expect(subject.needs_republish?).to be_falsey
-
-      # intercepting the call to save! and running our expectations there
-      # because by the time it's saved, #needs_republish? will be reset
-      subject.expects(:save!).with { |*args|
-        expect(subject.needs_republish?).to be_truthy
-        true
-      }
-
-      subject.publish!
-    end
-
-    it 'should be true if the workflow_state has changed' do
-      subject.workflow_state = 'deleted'
-      subject.save!
-      subject.reload
-      subject.workflow_state = 'available'
-      expect(subject.needs_republish?).to be_truthy
-    end
-  end
-
   describe "#current_regrade" do
 
     before(:once) { @quiz = @course.quizzes.create! title: 'Test Quiz' }
@@ -1516,6 +1509,40 @@ describe Quizzes::Quiz do
 
       quiz.update_attributes({ one_time_results: true })
       expect(quiz.show_correct_answers?(@user, submission)).to be_truthy
+    end
+
+    context "show_correct_answers_last_attempt is true" do
+      let(:user) { User.create! }
+
+      it "shows the correct answers on last attempt" do
+        quiz = @course.quizzes.create!({
+          title: 'test quiz',
+          show_correct_answers: true,
+          show_correct_answers_last_attempt: true,
+          allowed_attempts: 1
+        })
+
+        quiz.publish!
+
+        submission = quiz.generate_submission(user)
+
+        expect(quiz.show_correct_answers?(user, submission)).to be_truthy
+      end
+
+      it "hides the correct answers on last attempt" do
+        quiz = @course.quizzes.create!({
+          title: 'test quiz',
+          show_correct_answers: true,
+          show_correct_answers_last_attempt: true,
+          allowed_attempts: 2
+        })
+
+        quiz.publish!
+
+        submission = quiz.generate_submission(user)
+
+        expect(quiz.show_correct_answers?(user, submission)).to be_falsey
+      end
     end
   end
 

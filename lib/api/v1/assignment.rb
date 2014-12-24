@@ -137,10 +137,6 @@ module Api::V1::Assignment
       hash['anonymous_submissions'] = !!(assignment.quiz.anonymous_submissions)
     end
 
-    if assignment.discussion_topic
-      hash['discussion_topic_id'] = assignment.discussion_topic.id
-    end
-
     if assignment.allowed_extensions.present?
       hash['allowed_extensions'] = assignment.allowed_extensions
     end
@@ -205,7 +201,7 @@ module Api::V1::Assignment
       hash['only_visible_to_overrides'] = value_to_boolean(assignment.only_visible_to_overrides)
 
       if opts[:include_visibility]
-        hash['assignment_visibility'] = opts[:assignment_visibilities] || assignment.students_with_visibility.pluck(:id).uniq
+        hash['assignment_visibility'] = (opts[:assignment_visibilities] || assignment.students_with_visibility.pluck(:id).uniq).map(&:to_s)
       end
     end
 

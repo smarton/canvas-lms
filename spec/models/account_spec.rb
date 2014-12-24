@@ -385,15 +385,11 @@ describe Account do
     expect(a2.enrollment_terms.size).to eq 0
   end
 
-  def account_with_admin_and_restricted_user(account)
-    role = account.roles.build(:name => 'Restricted Admin')
-    role.base_role_type = AccountUser::BASE_ROLE_NAME
-    role.workflow_state = 'active'
-    role.save!
+  def account_with_admin_and_restricted_user(account, restricted_role)
     admin = User.create
     user = User.create
-    account.account_users.create(:user => admin, :membership_type => 'AccountAdmin')
-    account.account_users.create(:user => user, :membership_type => 'Restricted Admin')
+    account.account_users.create!(:user => admin, :role => admin_role)
+    account.account_users.create!(:user => user, :role => restricted_role)
     [ admin, user ]
   end
 
@@ -407,9 +403,12 @@ describe Account do
 
     # Set up a hierarchy of 4 accounts - a root account, a sub account,
     # a sub sub account, and SiteAdmin account.  Create a 'Restricted Admin'
-    # role in each one, and create an admin user and a user in the restricted
-    # admin role for each one
+    # role available for each one, and create an admin user and a user in that restricted role
+    @sa_role = custom_account_role('Restricted SA Admin', :account => Account.site_admin)
+
     root_account = Account.create
+    @root_role = custom_account_role('Restricted Root Admin', :account => root_account)
+
     sub_account = Account.create(:parent_account => root_account)
     sub_sub_account = Account.create(:parent_account => sub_account)
 
@@ -421,7 +420,7 @@ describe Account do
 
     hash.each do |k, v|
       v[:account].update_attribute(:settings, {:no_enrollments_can_create_courses => false})
-      admin, user = account_with_admin_and_restricted_user(v[:account])
+      admin, user = account_with_admin_and_restricted_user(v[:account], (k == :site_admin ? @sa_role : @root_role))
       hash[k][:admin] = admin
       hash[k][:user] = user
     end
@@ -468,7 +467,7 @@ describe Account do
     some_access = [:read_reports] + limited_access
     hash.each do |k, v|
       account = v[:account]
-      account.role_overrides.create!(:permission => 'read_reports', :enrollment_type => 'Restricted Admin', :enabled => true)
+      account.role_overrides.create!(:permission => 'read_reports', :role => (k == :site_admin ? @sa_role : @root_role), :enabled => true)
       # clear caches
       v[:account] = Account.find(account)
     end
@@ -658,7 +657,7 @@ describe Account do
       expect(tabs.map{|t| t[:id] }).not_to be_include(Account::TAB_DEVELOPER_KEYS)
     end
 
-    it "should not include external tools if not configured for course navigation" do
+    it "should not include external tools if not configured for account navigation" do
       tool = @account.context_external_tools.new(:name => "bob", :consumer_key => "bob", :shared_secret => "bob", :domain => "example.com")
       tool.user_navigation = {:url => "http://www.example.com", :text => "Example URL"}
       tool.save!
@@ -710,6 +709,36 @@ describe Account do
       expect(tab[:href]).to eq :account_external_tool_path
       expect(tab[:args]).to eq [@account.id, tool.id]
     end
+
+    it "should not include external tools for non-admins if visibility is set" do
+      course_with_teacher(:account => @account)
+      tool = @account.context_external_tools.new(:name => "bob", :consumer_key => "bob", :shared_secret => "bob", :domain => "example.com")
+      tool.account_navigation = {:url => "http://www.example.com", :text => "Example URL", :visibility => "admins"}
+      tool.save!
+      expect(tool.has_placement?(:account_navigation)).to eq true
+      tabs = @account.tabs_available(@teacher)
+      expect(tabs.map{|t| t[:id] }).to_not be_include(tool.asset_string)
+
+      admin = account_admin_user(:account => @account)
+      tabs = @account.tabs_available(admin)
+      expect(tabs.map{|t| t[:id] }).to be_include(tool.asset_string)
+    end
+
+    it 'includes message handlers' do
+      mock_tab = {
+        :id => '1234',
+        :label => 'my_label',
+        :css_class => '1234',
+        :href => :launch_path_helper,
+        :visibility => nil,
+        :external => true,
+        :hidden => false,
+        :args => [1, 2]
+      }
+      Lti::MessageHandler.stubs(:lti_apps_tabs).returns([mock_tab])
+      expect(@account.tabs_available(nil)).to include(mock_tab)
+    end
+
   end
 
   describe "fast_all_users" do
@@ -923,7 +952,7 @@ describe Account do
     end
   end
 
-  describe "available_course_roles_by_name" do
+  describe "available_custom_course_roles" do
     before :once do
       account_model
       @roleA = @account.roles.create :name => 'A'
@@ -933,32 +962,31 @@ describe Account do
       @roleB.base_role_type = 'StudentEnrollment'
       @roleB.save!
       @sub_account = @account.sub_accounts.create!
-      @roleBsub = @sub_account.roles.create :name => 'B'
-      @roleBsub.base_role_type = 'StudentEnrollment'
-      @roleBsub.save!
+      @roleC = @sub_account.roles.create :name => 'C'
+      @roleC.base_role_type = 'StudentEnrollment'
+      @roleC.save!
     end
 
     it "should return roles indexed by name" do
-      expect(@account.available_course_roles_by_name).to eq({ 'A' => @roleA, 'B' => @roleB })
+      expect(@account.available_custom_course_roles.sort_by(&:id)).to eq [ @roleA, @roleB ].sort_by(&:id)
     end
 
     it "should not return inactive roles" do
       @roleB.deactivate!
-      expect(@account.available_course_roles_by_name).to eq({ 'A' => @roleA })
+      expect(@account.available_custom_course_roles).to eq [ @roleA ]
     end
 
     it "should not return deleted roles" do
       @roleA.destroy
-      expect(@account.available_course_roles_by_name).to eq({ 'B' => @roleB })
+      expect(@account.available_custom_course_roles).to eq [ @roleB ]
     end
 
-    it "should find the most derived version of each role" do
-      expect(@sub_account.available_course_roles_by_name).to eq({ 'A' => @roleA, 'B' => @roleBsub })
+    it "should derive roles from parents" do
+      expect(@sub_account.available_custom_course_roles.sort_by(&:id)).to eq [ @roleA, @roleB, @roleC ].sort_by(&:id)
     end
 
-    it "should find a base role if the derived version is inactive" do
-      @roleBsub.deactivate!
-      expect(@sub_account.available_course_roles_by_name).to eq({ 'A' => @roleA, 'B' => @roleB })
+    it "should include built-in roles when called" do
+      expect(@sub_account.available_course_roles.sort_by(&:id)).to eq ([ @roleA, @roleB, @roleC ] + Role.built_in_course_roles).sort_by(&:id)
     end
   end
 
@@ -1079,6 +1107,53 @@ describe Account do
       account.ensure_defaults
       expect(account.lti_guid).to eq '12345'
     end
+  end
 
+  it 'should format a referer url' do
+    account = Account.new
+    expect(account.format_referer(nil)).to be_nil
+    expect(account.format_referer('')).to be_nil
+    expect(account.format_referer('not a url')).to be_nil
+    expect(account.format_referer('http://example.com/')).to eq 'http://example.com'
+    expect(account.format_referer('http://example.com/index.html')).to eq 'http://example.com'
+    expect(account.format_referer('http://example.com:80')).to eq 'http://example.com'
+    expect(account.format_referer('https://example.com:443')).to eq 'https://example.com'
+    expect(account.format_referer('http://example.com:3000')).to eq 'http://example.com:3000'
+  end
+
+  it 'should format trusted referers when set' do
+    account = Account.new
+    account.trusted_referers = 'https://example.com/,http://example.com:80,http://example.com:3000'
+    expect(account.settings[:trusted_referers]).to eq 'https://example.com,http://example.com,http://example.com:3000'
+
+    account.trusted_referers = nil
+    expect(account.settings[:trusted_referers]).to be_nil
+
+    account.trusted_referers = ''
+    expect(account.settings[:trusted_referers]).to be_nil
+  end
+
+  describe 'trusted_referer?' do
+    let!(:account) do
+      account = Account.new
+      account.settings[:trusted_referers] = 'https://example.com,http://example.com,http://example.com:3000'
+      account
+    end
+
+    it 'should be true when a referer is trusted' do
+      expect(account.trusted_referer?('http://example.com')).to be_truthy
+      expect(account.trusted_referer?('http://example.com:3000')).to be_truthy
+      expect(account.trusted_referer?('http://example.com:80')).to be_truthy
+      expect(account.trusted_referer?('https://example.com:443')).to be_truthy
+    end
+
+    it 'should be false when a referer is not provided' do
+      expect(account.trusted_referer?(nil)).to be_falsey
+      expect(account.trusted_referer?('')).to be_falsey
+    end
+
+    it 'should be false when a referer is not trusted' do
+      expect(account.trusted_referer?('https://example.com:5000')).to be_falsey
+    end
   end
 end
