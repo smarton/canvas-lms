@@ -31,6 +31,24 @@ if (ENV.has_key?('gateway'))
   }
 end
 
+namespace :canvas do
+  namespace :meta_tasks do
+    
+    desc "Tasks that need to run before _updated_"
+    Rake::Task["before_updated"].clear_actions
+    task :before_updated do
+      invoke 'canvas:copy_config'
+      invoke 'canvas:fix_owner'
+      invoke 'canvas:clone_qtimigrationtool'
+      invoke 'canvas:clone_analytics'
+      invoke 'canvas:symlink_canvasfiles'
+      invoke 'canvas:migrate_predeploy'
+      invoke 'canvas:compile_assets'
+    end
+
+  end
+end
+
 namespace :deploy do
   before :updated,  'canvas:meta_tasks:before_updated'
   after :updated,   'canvas:meta_tasks:after_updated'
