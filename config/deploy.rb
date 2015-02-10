@@ -8,7 +8,7 @@ set :user,          'ubuntu'
 set :deploy_to,     '/var/canvas'
 set :rails_env,     'production'
 set :linked_dirs,   %w{log tmp/pids public/system}
-set :log_level,     ENV['log_level'] || :info
+set :log_level,     ENV['log_level'] || :debug
 set :pty,           true
 
 set :bundle_path, "vendor/bundle"
