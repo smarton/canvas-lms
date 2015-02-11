@@ -34,10 +34,13 @@ end
 namespace :canvas do
   
   desc "TEMP Rollback Analytics to e810a1 to work around compile_assets problem"
-  task :analytcs_rollback do
+  task :analytics_rollback do
     on roles(:all) do
       within "#{release_path}/gems/plugins/analytics" do
         execute :git, 'checkout', 'e810a1a126ac4c47c411507251041420402fd02b'
+      end
+      within release_path do
+        execute :bundle, 'update'
       end
     end
   end
