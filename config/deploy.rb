@@ -32,6 +32,19 @@ if (ENV.has_key?('gateway'))
 end
 
 namespace :canvas do
+  
+  desc "TEMP Rollback Analytics to e810a1 to work around compile_assets problem"
+  task :analytics_rollback do
+    on roles(:all) do
+      within "#{release_path}/gems/plugins/analytics" do
+        execute :git, 'checkout', 'e810a1a126ac4c47c411507251041420402fd02b'
+      end
+      within release_path do
+        execute :bundle, 'update'
+      end
+    end
+  end
+  
   namespace :meta_tasks do
     
     desc "Tasks that need to run before _updated_"
@@ -41,6 +54,7 @@ namespace :canvas do
       invoke 'canvas:fix_owner'
       invoke 'canvas:clone_qtimigrationtool'
       invoke 'canvas:clone_analytics'
+      invoke 'canvas:analytics_rollback'
       invoke 'canvas:symlink_canvasfiles'
       invoke 'canvas:migrate_predeploy'
       invoke 'canvas:compile_assets'
